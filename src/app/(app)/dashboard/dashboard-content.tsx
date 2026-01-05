@@ -41,6 +41,7 @@ import { getProjects } from '@/app/actions/projects'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { Task, Project, ViewCategory } from '@/types/database'
+import { OnboardingTour } from '@/components/onboarding/onboarding-tour'
 
 interface CategorySection {
   id: ViewCategory
@@ -432,7 +433,7 @@ export function DashboardContent() {
           <h1 className="text-2xl font-bold">Dashboard</h1>
           <p className="text-muted-foreground">Organize your tasks by timeframe</p>
         </div>
-        <Button onClick={() => handleNewTask('daily')}>
+        <Button id="tour-new-task-button" onClick={() => handleNewTask('daily')}>
           <Plus className="mr-2 h-4 w-4" />
           New Task
         </Button>
@@ -519,7 +520,7 @@ export function DashboardContent() {
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div id="tour-task-columns" className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {categories.map((category) => (
             <DroppableSection
               key={category.id}
@@ -552,6 +553,9 @@ export function DashboardContent() {
         onSuccess={handleSuccess}
         defaultViewCategory={defaultViewCategory}
       />
+
+      {/* Onboarding Tour for new users */}
+      <OnboardingTour />
     </div>
   )
 }

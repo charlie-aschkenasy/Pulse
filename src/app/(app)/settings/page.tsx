@@ -26,7 +26,10 @@ import {
   Lock,
   LogOut,
   Loader2,
+  HelpCircle,
+  RotateCcw,
 } from 'lucide-react'
+import { resetOnboarding } from '@/components/onboarding/onboarding-tour'
 
 const timezones = [
   { value: 'America/Mexico_City', label: 'Mexico City (CST)' },
@@ -192,6 +195,38 @@ export default function SettingsPage() {
             <p className="text-xs text-muted-foreground">
               Password change functionality coming soon
             </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Help & Support */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <HelpCircle className="h-5 w-5" />
+            <CardTitle>Help & Support</CardTitle>
+          </div>
+          <CardDescription>Get help with using Pulse</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium">Onboarding Tour</p>
+              <p className="text-sm text-muted-foreground">
+                Take a guided tour of the main features
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => {
+                resetOnboarding()
+                toast.success('Onboarding reset! Refresh the dashboard to see the tour.')
+                router.push('/dashboard')
+              }}
+            >
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Restart Tour
+            </Button>
           </div>
         </CardContent>
       </Card>

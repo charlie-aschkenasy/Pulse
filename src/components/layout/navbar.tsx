@@ -29,9 +29,9 @@ interface NavbarProps {
 }
 
 const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/projects', label: 'Projects', icon: FolderKanban },
-  { href: '/matrix', label: 'Matrix', icon: Grid2X2 },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, tourId: 'tour-dashboard-link' },
+  { href: '/projects', label: 'Projects', icon: FolderKanban, tourId: 'tour-projects-link' },
+  { href: '/matrix', label: 'Matrix', icon: Grid2X2, tourId: 'tour-matrix-link' },
 ]
 
 export function Navbar({ email, taskCount }: NavbarProps) {
@@ -79,6 +79,7 @@ export function Navbar({ email, taskCount }: NavbarProps) {
               <Link
                 key={item.href}
                 href={item.href}
+                id={item.tourId}
                 className={cn(
                   'flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors',
                   isActive
