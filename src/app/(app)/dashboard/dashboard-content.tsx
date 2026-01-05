@@ -42,7 +42,7 @@ import { getProjects } from '@/app/actions/projects'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { Task, Project, ViewCategory } from '@/types/database'
-import { OnboardingTour } from '@/components/onboarding/onboarding-tour'
+import { useWalkthrough } from '@/components/onboarding/walkthrough-context'
 
 interface CategorySection {
   id: ViewCategory
@@ -114,6 +114,7 @@ function DroppableSection({
 export function DashboardContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
+  const walkthrough = useWalkthrough()
   const [dailyTasks, setDailyTasks] = useState<(Task & { project?: Project | null })[]>([])
   const [weeklyTasks, setWeeklyTasks] = useState<(Task & { project?: Project | null })[]>([])
   const [monthlyTasks, setMonthlyTasks] = useState<(Task & { project?: Project | null })[]>([])
@@ -127,15 +128,22 @@ export function DashboardContent() {
   const [defaultViewCategory, setDefaultViewCategory] = useState<ViewCategory>('daily')
   const [activeTask, setActiveTask] = useState<(Task & { project?: Project | null }) | null>(null)
 
-  // Check if tour should be forced via URL param
+  // Check if walkthrough should be started via URL param
   const forceTour = searchParams.get('tour') === 'true'
 
-  // Clear URL param after tour starts
-  const handleTourComplete = useCallback(() => {
-    if (forceTour) {
+  // Start walkthrough if forced or if user hasn't completed it
+  useEffect(() => {
+    if (forceTour && !walkthrough.isActive) {
+      walkthrough.startWalkthrough()
       router.replace('/dashboard', { scroll: false })
+    } else if (!walkthrough.isWalkthroughComplete() && !walkthrough.isActive) {
+      // Auto-start for new users
+      const timer = setTimeout(() => {
+        walkthrough.startWalkthrough()
+      }, 800)
+      return () => clearTimeout(timer)
     }
-  }, [forceTour, router])
+  }, [forceTour, router, walkthrough])
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -267,6 +275,12 @@ export function DashboardContent() {
       } else {
         // New task - add to appropriate category
         addTaskToState(task, task.view_category)
+
+        // Walkthrough: track tutorial task and advance
+        if (walkthrough.isActive && walkthrough.currentStep === 'fill-task-form') {
+          walkthrough.setTutorialTaskId(task.id)
+          walkthrough.advanceStep('task-created')
+        }
       }
 
       // Update counts optimistically
@@ -283,6 +297,11 @@ export function DashboardContent() {
     setDefaultViewCategory(category)
     setEditingTask(null)
     setIsModalOpen(true)
+
+    // Walkthrough: advance when modal opens
+    if (walkthrough.isActive && walkthrough.currentStep === 'click-new-task') {
+      walkthrough.advanceStep('fill-task-form')
+    }
   }
 
   // Optimistic status change
@@ -413,6 +432,16 @@ export function DashboardContent() {
     setTasksState(targetCategoryId, [...targetTasks, updatedTask])
 
     toast.success(`Task moved to ${categoryLabel}`)
+
+    // Walkthrough: detect tutorial task moved to weekly
+    if (
+      walkthrough.isActive &&
+      walkthrough.currentStep === 'drag-to-weekly' &&
+      draggedTask.id === walkthrough.tutorialTaskId &&
+      targetCategoryId === 'weekly'
+    ) {
+      walkthrough.advanceStep('task-moved')
+    }
 
     // Fire server call in background (don't await)
     updateTask(draggedTask.id, { view_category: targetCategoryId }).then(({ error }) => {
@@ -565,10 +594,8 @@ export function DashboardContent() {
         projects={projects}
         onSuccess={handleSuccess}
         defaultViewCategory={defaultViewCategory}
+        isWalkthroughActive={walkthrough.isActive && walkthrough.currentStep === 'fill-task-form'}
       />
-
-      {/* Onboarding Tour for new users */}
-      <OnboardingTour forceStart={forceTour} onComplete={handleTourComplete} />
     </div>
   )
 }

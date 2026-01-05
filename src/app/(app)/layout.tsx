@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { Navbar } from '@/components/layout/navbar'
 import { getTaskCounts } from '@/app/actions/tasks'
 import { Toaster } from '@/components/ui/sonner'
+import { WalkthroughWrapper } from '@/components/onboarding/walkthrough-wrapper'
 
 export default async function AppLayout({
   children,
@@ -20,12 +21,14 @@ export default async function AppLayout({
   const totalTasks = taskCounts?.total ?? 0
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navbar email={user.email || ''} taskCount={totalTasks} />
-      <main className="container mx-auto px-4 py-6 max-w-7xl">
-        {children}
-      </main>
-      <Toaster position="bottom-right" />
-    </div>
+    <WalkthroughWrapper>
+      <div className="min-h-screen bg-background">
+        <Navbar email={user.email || ''} taskCount={totalTasks} />
+        <main className="container mx-auto px-4 py-6 max-w-7xl">
+          {children}
+        </main>
+        <Toaster position="bottom-right" />
+      </div>
+    </WalkthroughWrapper>
   )
 }

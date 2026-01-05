@@ -42,6 +42,7 @@ import {
   formatDuration,
   parseDuration,
 } from '@/lib/validations'
+import { useWalkthrough } from '@/components/onboarding/walkthrough-context'
 
 interface TaskDetailContentProps {
   task: Task & { project?: Project | null }
@@ -51,7 +52,9 @@ interface TaskDetailContentProps {
 
 export function TaskDetailContent({ task: initialTask, projects, userId }: TaskDetailContentProps) {
   const router = useRouter()
+  const walkthrough = useWalkthrough()
   const [task, setTask] = useState(initialTask)
+  const [hasTypedInEditor, setHasTypedInEditor] = useState(false)
   const [title, setTitle] = useState(task.title)
   const [durationInput, setDurationInput] = useState(
     task.duration_minutes ? formatDuration(task.duration_minutes) : ''
@@ -87,6 +90,16 @@ export function TaskDetailContent({ task: initialTask, projects, userId }: TaskD
     (content: Record<string, unknown>) => {
       setEditorContent(content)
 
+      // Walkthrough: detect typing in editor
+      if (
+        walkthrough.isActive &&
+        walkthrough.currentStep === 'type-in-editor' &&
+        !hasTypedInEditor
+      ) {
+        setHasTypedInEditor(true)
+        walkthrough.advanceStep('editor-typed')
+      }
+
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current)
       }
@@ -95,7 +108,7 @@ export function TaskDetailContent({ task: initialTask, projects, userId }: TaskD
         saveEditorContent(content)
       }, 1000)
     },
-    [saveEditorContent]
+    [saveEditorContent, walkthrough, hasTypedInEditor]
   )
 
   // Save on unmount
@@ -167,7 +180,9 @@ export function TaskDetailContent({ task: initialTask, projects, userId }: TaskD
   }
 
   const handleDelete = async () => {
-    if (!confirm('Are you sure you want to delete this task?')) return
+    // Skip confirmation during walkthrough
+    const isTutorialTask = walkthrough.isActive && walkthrough.tutorialTaskId === task.id
+    if (!isTutorialTask && !confirm('Are you sure you want to delete this task?')) return
 
     setIsDeleting(true)
     const { error } = await deleteTask(task.id)
@@ -176,6 +191,13 @@ export function TaskDetailContent({ task: initialTask, projects, userId }: TaskD
       setIsDeleting(false)
     } else {
       toast.success('Task deleted')
+
+      // Walkthrough: complete when tutorial task is deleted
+      if (isTutorialTask) {
+        walkthrough.setTutorialTaskId(null)
+        walkthrough.advanceStep('complete')
+      }
+
       router.push('/dashboard')
     }
   }
@@ -209,6 +231,7 @@ export function TaskDetailContent({ task: initialTask, projects, userId }: TaskD
             size="sm"
             onClick={handleDelete}
             disabled={isDeleting}
+            data-walkthrough="delete-button"
           >
             {isDeleting ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -365,7 +388,7 @@ export function TaskDetailContent({ task: initialTask, projects, userId }: TaskD
       <Separator />
 
       {/* Editor */}
-      <div>
+      <div data-walkthrough="notes-editor">
         <h2 className="text-lg font-semibold mb-4">Notes</h2>
         <TipTapEditor
           content={editorContent}

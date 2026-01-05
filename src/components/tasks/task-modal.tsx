@@ -43,6 +43,7 @@ interface TaskModalProps {
   defaultQuadrant?: { urgent: boolean; important: boolean }
   defaultViewCategory?: ViewCategory
   onSuccess?: (task?: Task & { project?: Project | null }) => void
+  isWalkthroughActive?: boolean
 }
 
 export function TaskModal({
@@ -53,6 +54,7 @@ export function TaskModal({
   defaultQuadrant,
   defaultViewCategory = 'daily',
   onSuccess,
+  isWalkthroughActive = false,
 }: TaskModalProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [showNewProject, setShowNewProject] = useState(false)
@@ -190,7 +192,11 @@ export function TaskModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]" onKeyDown={handleKeyDown}>
+      <DialogContent
+        className="sm:max-w-[500px]"
+        onKeyDown={handleKeyDown}
+        data-walkthrough={isWalkthroughActive ? 'task-modal' : undefined}
+      >
         <DialogHeader>
           <DialogTitle>{isEditing ? 'Edit Task' : 'New Task'}</DialogTitle>
         </DialogHeader>
