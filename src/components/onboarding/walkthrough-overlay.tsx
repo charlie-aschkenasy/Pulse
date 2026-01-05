@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -153,6 +153,8 @@ interface SpotlightRect {
   left: number
   width: number
   height: number
+  right: number
+  bottom: number
 }
 
 interface TooltipStyle {
@@ -200,12 +202,17 @@ export function WalkthroughOverlay() {
     const rect = element.getBoundingClientRect()
     const padding = 12
 
-    setSpotlightRect({
-      top: rect.top - padding,
-      left: rect.left - padding,
+    // Calculate all edges for the 4-panel overlay approach
+    const spotlight = {
+      top: Math.max(0, rect.top - padding),
+      left: Math.max(0, rect.left - padding),
       width: rect.width + padding * 2,
       height: rect.height + padding * 2,
-    })
+      right: rect.right + padding,
+      bottom: rect.bottom + padding,
+    }
+
+    setSpotlightRect(spotlight)
 
     const gap = 16
     let style: TooltipStyle = {}
@@ -324,33 +331,57 @@ export function WalkthroughOverlay() {
 
   if (!mounted || !isActive || isPaused || currentStep === 'idle') return null
 
+  // For steps that allow interaction, we need the overlay to not block clicks
+  const showInteractiveOverlay = config.allowInteraction && spotlightRect
+  // For steps with no target but allowInteraction (e.g., click-task-detail), don't show any overlay
+  const noOverlay = config.allowInteraction && !spotlightRect
+
   return createPortal(
     <div className="fixed inset-0 z-[9999] pointer-events-none">
-      {/* Dark overlay with spotlight */}
-      <svg
-        className="absolute inset-0 w-full h-full pointer-events-auto"
-        style={{ opacity: isAnimating ? 0.8 : 1 }}
-        onClick={(e) => {
-          // Allow clicks through the spotlight area
-          if (config.allowInteraction && spotlightRect) {
-            const x = e.clientX
-            const y = e.clientY
-            if (
-              x >= spotlightRect.left &&
-              x <= spotlightRect.left + spotlightRect.width &&
-              y >= spotlightRect.top &&
-              y <= spotlightRect.top + spotlightRect.height
-            ) {
-              return // Let the click through
-            }
-          }
-          e.stopPropagation()
-        }}
-      >
-        <defs>
-          <mask id="walkthrough-mask">
-            <rect x="0" y="0" width="100%" height="100%" fill="white" />
-            {spotlightRect && (
+      {/* 4-panel overlay approach - leaves spotlight area completely uncovered */}
+      {showInteractiveOverlay ? (
+        <>
+          {/* Top panel */}
+          <div
+            className="fixed left-0 right-0 top-0 bg-black/70 pointer-events-auto transition-all duration-300"
+            style={{ height: spotlightRect.top }}
+          />
+          {/* Bottom panel */}
+          <div
+            className="fixed left-0 right-0 bottom-0 bg-black/70 pointer-events-auto transition-all duration-300"
+            style={{ top: spotlightRect.bottom }}
+          />
+          {/* Left panel */}
+          <div
+            className="fixed left-0 bg-black/70 pointer-events-auto transition-all duration-300"
+            style={{
+              top: spotlightRect.top,
+              width: spotlightRect.left,
+              height: spotlightRect.height,
+            }}
+          />
+          {/* Right panel */}
+          <div
+            className="fixed right-0 bg-black/70 pointer-events-auto transition-all duration-300"
+            style={{
+              top: spotlightRect.top,
+              left: spotlightRect.right,
+              height: spotlightRect.height,
+            }}
+          />
+        </>
+      ) : noOverlay ? (
+        /* No overlay blocking - user can click anywhere (e.g., click-task-detail step) */
+        null
+      ) : spotlightRect ? (
+        /* Non-interactive spotlight with SVG mask */
+        <svg
+          className="absolute inset-0 w-full h-full pointer-events-auto"
+          style={{ opacity: isAnimating ? 0.8 : 1 }}
+        >
+          <defs>
+            <mask id="walkthrough-mask">
+              <rect x="0" y="0" width="100%" height="100%" fill="white" />
               <rect
                 x={spotlightRect.left}
                 y={spotlightRect.top}
@@ -360,37 +391,26 @@ export function WalkthroughOverlay() {
                 fill="black"
                 className="transition-all duration-300 ease-out"
               />
-            )}
-          </mask>
-        </defs>
-        <rect
-          x="0"
-          y="0"
-          width="100%"
-          height="100%"
-          fill="rgba(0, 0, 0, 0.7)"
-          mask="url(#walkthrough-mask)"
-          style={{ pointerEvents: config.allowInteraction ? 'none' : 'auto' }}
-        />
-      </svg>
+            </mask>
+          </defs>
+          <rect
+            x="0"
+            y="0"
+            width="100%"
+            height="100%"
+            fill="rgba(0, 0, 0, 0.7)"
+            mask="url(#walkthrough-mask)"
+          />
+        </svg>
+      ) : (
+        /* Full overlay for center-positioned steps (welcome, complete, etc.) */
+        <div className="fixed inset-0 bg-black/70 pointer-events-auto" />
+      )}
 
       {/* Spotlight glow effect */}
       {spotlightRect && (
         <div
           className="absolute rounded-xl ring-2 ring-primary/50 ring-offset-4 ring-offset-transparent pointer-events-none transition-all duration-300 ease-out animate-pulse"
-          style={{
-            top: spotlightRect.top,
-            left: spotlightRect.left,
-            width: spotlightRect.width,
-            height: spotlightRect.height,
-          }}
-        />
-      )}
-
-      {/* Make spotlight area interactive */}
-      {spotlightRect && config.allowInteraction && (
-        <div
-          className="absolute pointer-events-auto"
           style={{
             top: spotlightRect.top,
             left: spotlightRect.left,
