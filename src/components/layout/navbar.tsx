@@ -59,10 +59,16 @@ export function Navbar({ email, taskCount }: NavbarProps) {
       <div className="flex h-14 items-center px-4 md:px-6">
         {/* Logo and App Name */}
         <Link href="/dashboard" className="flex items-center gap-2 mr-6">
-          <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-            <span className="text-primary-foreground font-bold text-lg">T</span>
-          </div>
-          <span className="font-semibold text-lg hidden sm:inline">TaskFlow</span>
+          <svg
+            viewBox="0 0 100 40"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3"
+            className="w-10 h-6 text-primary"
+          >
+            <polyline points="0,20 20,20 25,20 30,5 35,35 40,20 45,20 50,20 55,15 60,25 65,20 100,20" />
+          </svg>
+          <span className="font-semibold text-lg hidden sm:inline">Pulse</span>
         </Link>
 
         {/* Navigation Links */}

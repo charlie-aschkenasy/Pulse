@@ -111,7 +111,7 @@ export default function SettingsPage() {
             <Badge variant="secondary" className="ml-auto">Coming Soon</Badge>
           </div>
           <CardDescription>
-            Connect external services to TaskFlow
+            Connect external services to Pulse
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">

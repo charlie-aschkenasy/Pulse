@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'TaskFlow - Modern Task Management',
+  title: 'Pulse - Modern Task Management',
   description: 'A cross-device task manager with Dashboard, Projects, and Covey Matrix views',
 }
 

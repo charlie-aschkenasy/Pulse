@@ -82,13 +82,19 @@ export default function SignupPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-center mb-4">
-            <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-xl">T</span>
-            </div>
+            <svg
+              viewBox="0 0 100 40"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="3"
+              className="w-16 h-10 text-primary"
+            >
+              <polyline points="0,20 20,20 25,20 30,5 35,35 40,20 45,20 50,20 55,15 60,25 65,20 100,20" />
+            </svg>
           </div>
           <CardTitle className="text-2xl text-center">Create an account</CardTitle>
           <CardDescription className="text-center">
-            Get started with TaskFlow today
+            Get started with Pulse today
           </CardDescription>
         </CardHeader>
         <CardContent>

@@ -1,4 +1,4 @@
-# TaskFlow
+# Pulse
 
 A modern, cross-device task manager with Dashboard, Projects, and Covey Matrix views. Built with Next.js 14+, Supabase, and a clean blue-accented UI.
 
@@ -47,7 +47,7 @@ A modern, cross-device task manager with Dashboard, Projects, and Covey Matrix v
 ### 1. Clone and Install
 
 ```bash
-cd taskflow
+cd pulse
 npm install
 ```
 
