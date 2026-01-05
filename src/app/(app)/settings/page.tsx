@@ -220,8 +220,7 @@ export default function SettingsPage() {
               variant="outline"
               onClick={() => {
                 resetOnboarding()
-                toast.success('Onboarding reset! Refresh the dashboard to see the tour.')
-                router.push('/dashboard')
+                router.push('/dashboard?tour=true')
               }}
             >
               <RotateCcw className="mr-2 h-4 w-4" />

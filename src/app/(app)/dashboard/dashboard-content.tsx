@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import {
   DndContext,
   closestCenter,
@@ -111,6 +112,8 @@ function DroppableSection({
 }
 
 export function DashboardContent() {
+  const searchParams = useSearchParams()
+  const router = useRouter()
   const [dailyTasks, setDailyTasks] = useState<(Task & { project?: Project | null })[]>([])
   const [weeklyTasks, setWeeklyTasks] = useState<(Task & { project?: Project | null })[]>([])
   const [monthlyTasks, setMonthlyTasks] = useState<(Task & { project?: Project | null })[]>([])
@@ -123,6 +126,16 @@ export function DashboardContent() {
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [defaultViewCategory, setDefaultViewCategory] = useState<ViewCategory>('daily')
   const [activeTask, setActiveTask] = useState<(Task & { project?: Project | null }) | null>(null)
+
+  // Check if tour should be forced via URL param
+  const forceTour = searchParams.get('tour') === 'true'
+
+  // Clear URL param after tour starts
+  const handleTourComplete = useCallback(() => {
+    if (forceTour) {
+      router.replace('/dashboard', { scroll: false })
+    }
+  }, [forceTour, router])
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -555,7 +568,7 @@ export function DashboardContent() {
       />
 
       {/* Onboarding Tour for new users */}
-      <OnboardingTour />
+      <OnboardingTour forceStart={forceTour} onComplete={handleTourComplete} />
     </div>
   )
 }

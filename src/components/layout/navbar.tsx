@@ -20,7 +20,9 @@ import {
   Settings,
   LogOut,
   User,
+  HelpCircle,
 } from 'lucide-react'
+import { resetOnboarding } from '@/components/onboarding/onboarding-tour'
 import { toast } from 'sonner'
 
 interface NavbarProps {
@@ -130,6 +132,16 @@ export function Navbar({ email, taskCount }: NavbarProps) {
                   <User className="mr-2 h-4 w-4" />
                   <span>Profile</span>
                 </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onClick={() => {
+                  resetOnboarding()
+                  router.push('/dashboard?tour=true')
+                }}
+              >
+                <HelpCircle className="mr-2 h-4 w-4" />
+                <span>Restart Tutorial</span>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem

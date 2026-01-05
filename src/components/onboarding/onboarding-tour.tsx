@@ -73,9 +73,10 @@ interface TooltipStyle {
 
 interface OnboardingTourProps {
   onComplete?: () => void
+  forceStart?: boolean
 }
 
-export function OnboardingTour({ onComplete }: OnboardingTourProps) {
+export function OnboardingTour({ onComplete, forceStart = false }: OnboardingTourProps) {
   const [isActive, setIsActive] = useState(false)
   const [currentStep, setCurrentStep] = useState(0)
   const [spotlightRect, setSpotlightRect] = useState<SpotlightRect | null>(null)
@@ -90,12 +91,17 @@ export function OnboardingTour({ onComplete }: OnboardingTourProps) {
   useEffect(() => {
     setMounted(true)
     const hasSeenOnboarding = localStorage.getItem(ONBOARDING_STORAGE_KEY)
-    if (!hasSeenOnboarding) {
+
+    // Show tour if forced or if user hasn't seen it
+    if (forceStart || !hasSeenOnboarding) {
       // Delay to ensure DOM is ready
-      const timer = setTimeout(() => setIsActive(true), 600)
+      const timer = setTimeout(() => {
+        setCurrentStep(0) // Reset to first step
+        setIsActive(true)
+      }, 600)
       return () => clearTimeout(timer)
     }
-  }, [])
+  }, [forceStart])
 
   // Calculate spotlight and tooltip positions
   const updatePositions = useCallback(() => {
