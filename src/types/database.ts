@@ -9,6 +9,8 @@ export type Json =
 export type TaskStatus = 'open' | 'in_progress' | 'blocked' | 'completed' | 'archived'
 export type TaskPriority = 'high' | 'medium' | 'low'
 export type ViewCategory = 'daily' | 'weekly' | 'monthly'
+export type RecurrenceType = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom'
+export type RecurrenceDay = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'
 
 export interface Database {
   public: {
@@ -74,6 +76,14 @@ export interface Database {
           view_category: ViewCategory
           created_at: string
           updated_at: string
+          is_recurring: boolean
+          recurrence_type: RecurrenceType | null
+          recurrence_interval: number
+          recurrence_days: RecurrenceDay[]
+          recurrence_end_date: string | null
+          parent_task_id: string | null
+          is_skipped: boolean
+          auto_complete_subtasks: boolean
         }
         Insert: {
           id?: string
@@ -92,6 +102,14 @@ export interface Database {
           view_category?: ViewCategory
           created_at?: string
           updated_at?: string
+          is_recurring?: boolean
+          recurrence_type?: RecurrenceType | null
+          recurrence_interval?: number
+          recurrence_days?: RecurrenceDay[]
+          recurrence_end_date?: string | null
+          parent_task_id?: string | null
+          is_skipped?: boolean
+          auto_complete_subtasks?: boolean
         }
         Update: {
           id?: string
@@ -110,6 +128,43 @@ export interface Database {
           view_category?: ViewCategory
           created_at?: string
           updated_at?: string
+          is_recurring?: boolean
+          recurrence_type?: RecurrenceType | null
+          recurrence_interval?: number
+          recurrence_days?: RecurrenceDay[]
+          recurrence_end_date?: string | null
+          parent_task_id?: string | null
+          is_skipped?: boolean
+          auto_complete_subtasks?: boolean
+        }
+      }
+      subtasks: {
+        Row: {
+          id: string
+          task_id: string
+          user_id: string
+          title: string
+          is_completed: boolean
+          sort_index: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          task_id: string
+          user_id: string
+          title: string
+          is_completed?: boolean
+          sort_index?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          task_id?: string
+          user_id?: string
+          title?: string
+          is_completed?: boolean
+          sort_index?: number
+          created_at?: string
         }
       }
       task_events: {
@@ -145,6 +200,8 @@ export interface Database {
       task_status: TaskStatus
       task_priority: TaskPriority
       view_category: ViewCategory
+      recurrence_type: RecurrenceType
+      recurrence_day: RecurrenceDay
     }
   }
 }
@@ -153,11 +210,14 @@ export type Profile = Database['public']['Tables']['profiles']['Row']
 export type Project = Database['public']['Tables']['projects']['Row']
 export type Task = Database['public']['Tables']['tasks']['Row']
 export type TaskEvent = Database['public']['Tables']['task_events']['Row']
+export type Subtask = Database['public']['Tables']['subtasks']['Row']
 
 export type ProjectInsert = Database['public']['Tables']['projects']['Insert']
 export type ProjectUpdate = Database['public']['Tables']['projects']['Update']
 export type TaskInsert = Database['public']['Tables']['tasks']['Insert']
 export type TaskUpdate = Database['public']['Tables']['tasks']['Update']
+export type SubtaskInsert = Database['public']['Tables']['subtasks']['Insert']
+export type SubtaskUpdate = Database['public']['Tables']['subtasks']['Update']
 
 // Extended types with relations
 export interface TaskWithProject extends Task {

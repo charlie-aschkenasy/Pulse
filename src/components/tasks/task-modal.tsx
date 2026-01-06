@@ -28,12 +28,13 @@ import {
 } from '@/components/ui/popover'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
-import { CalendarIcon, Loader2, Plus } from 'lucide-react'
+import { CalendarIcon, Loader2, Plus, Repeat } from 'lucide-react'
 import { toast } from 'sonner'
 import { createTask, updateTask } from '@/app/actions/tasks'
 import { createProject } from '@/app/actions/projects'
-import { taskSchema, type TaskFormData, formatDuration, taskPriorityOptions, taskStatusOptions, viewCategoryOptions } from '@/lib/validations'
-import type { Task, Project, ViewCategory } from '@/types/database'
+import { taskSchema, type TaskFormData, formatDuration, taskPriorityOptions, taskStatusOptions, viewCategoryOptions, recurrenceTypeOptions, recurrenceDayOptions } from '@/lib/validations'
+import type { Task, Project, ViewCategory, RecurrenceDay } from '@/types/database'
+import { Checkbox } from '@/components/ui/checkbox'
 
 interface TaskModalProps {
   open: boolean
@@ -62,6 +63,9 @@ export function TaskModal({
   const [date, setDate] = useState<Date | undefined>(
     task?.due_date ? new Date(task.due_date + 'T00:00:00') : undefined
   )
+  const [recurrenceEndDate, setRecurrenceEndDate] = useState<Date | undefined>(
+    task?.recurrence_end_date ? new Date(task.recurrence_end_date + 'T00:00:00') : undefined
+  )
 
   const isEditing = !!task
 
@@ -84,12 +88,20 @@ export function TaskModal({
       urgent: task?.urgent ?? defaultQuadrant?.urgent ?? false,
       important: task?.important ?? defaultQuadrant?.important ?? false,
       view_category: task?.view_category || defaultViewCategory,
+      is_recurring: task?.is_recurring || false,
+      recurrence_type: task?.recurrence_type || null,
+      recurrence_interval: task?.recurrence_interval || 1,
+      recurrence_days: task?.recurrence_days || [],
+      recurrence_end_date: task?.recurrence_end_date || null,
     },
   })
 
   const watchProjectId = watch('project_id')
   const watchUrgent = watch('urgent')
   const watchImportant = watch('important')
+  const watchIsRecurring = watch('is_recurring')
+  const watchRecurrenceType = watch('recurrence_type')
+  const watchRecurrenceDays = watch('recurrence_days') || []
 
   useEffect(() => {
     if (open) {
@@ -103,8 +115,14 @@ export function TaskModal({
         urgent: task?.urgent ?? defaultQuadrant?.urgent ?? false,
         important: task?.important ?? defaultQuadrant?.important ?? false,
         view_category: task?.view_category || defaultViewCategory,
+        is_recurring: task?.is_recurring || false,
+        recurrence_type: task?.recurrence_type || null,
+        recurrence_interval: task?.recurrence_interval || 1,
+        recurrence_days: task?.recurrence_days || [],
+        recurrence_end_date: task?.recurrence_end_date || null,
       })
       setDate(task?.due_date ? new Date(task.due_date + 'T00:00:00') : undefined)
+      setRecurrenceEndDate(task?.recurrence_end_date ? new Date(task.recurrence_end_date + 'T00:00:00') : undefined)
     }
   }, [open, task, defaultQuadrant, defaultViewCategory, reset])
 
@@ -122,6 +140,11 @@ export function TaskModal({
           urgent: data.urgent,
           important: data.important,
           view_category: data.view_category,
+          is_recurring: data.is_recurring || false,
+          recurrence_type: data.is_recurring ? data.recurrence_type : null,
+          recurrence_interval: data.recurrence_interval || 1,
+          recurrence_days: data.recurrence_days || [],
+          recurrence_end_date: data.recurrence_end_date || null,
         })
 
         if (error) {
@@ -142,6 +165,11 @@ export function TaskModal({
           urgent: data.urgent,
           important: data.important,
           view_category: data.view_category,
+          is_recurring: data.is_recurring || false,
+          recurrence_type: data.is_recurring ? data.recurrence_type : null,
+          recurrence_interval: data.recurrence_interval || 1,
+          recurrence_days: data.recurrence_days || [],
+          recurrence_end_date: data.recurrence_end_date || null,
         })
 
         if (error) {
@@ -181,6 +209,22 @@ export function TaskModal({
     if (selectedDate) {
       setDate(selectedDate)
       setValue('due_date', format(selectedDate, 'yyyy-MM-dd'))
+    }
+  }
+
+  const handleRecurrenceEndDateSelect = (selectedDate: Date | undefined) => {
+    if (selectedDate) {
+      setRecurrenceEndDate(selectedDate)
+      setValue('recurrence_end_date', format(selectedDate, 'yyyy-MM-dd'))
+    }
+  }
+
+  const handleRecurrenceDayToggle = (day: RecurrenceDay) => {
+    const currentDays = watchRecurrenceDays || []
+    if (currentDays.includes(day)) {
+      setValue('recurrence_days', currentDays.filter((d: RecurrenceDay) => d !== day))
+    } else {
+      setValue('recurrence_days', [...currentDays, day])
     }
   }
 
@@ -284,6 +328,139 @@ export function TaskModal({
                 {...register('duration')}
               />
             </div>
+          </div>
+
+          {/* Recurrence Section */}
+          <div className="space-y-3 p-3 border rounded-lg bg-muted/30">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Repeat className="h-4 w-4 text-muted-foreground" />
+                <Label htmlFor="is_recurring" className="text-sm font-medium">
+                  Repeat
+                </Label>
+              </div>
+              <Switch
+                id="is_recurring"
+                checked={watchIsRecurring}
+                onCheckedChange={(checked) => {
+                  setValue('is_recurring', checked)
+                  if (checked && !watchRecurrenceType) {
+                    setValue('recurrence_type', 'daily')
+                  }
+                }}
+              />
+            </div>
+
+            {watchIsRecurring && (
+              <div className="space-y-3 pt-2">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Frequency</Label>
+                    <Select
+                      value={watchRecurrenceType || 'daily'}
+                      onValueChange={(value) =>
+                        setValue('recurrence_type', value as TaskFormData['recurrence_type'])
+                      }
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {recurrenceTypeOptions.filter(o => o.value !== 'none').map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {(watchRecurrenceType === 'custom' || watchRecurrenceType === 'weekly' || watchRecurrenceType === 'monthly' || watchRecurrenceType === 'yearly') && (
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">
+                        Every
+                      </Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          min="1"
+                          max="365"
+                          className="h-9 w-16"
+                          value={watch('recurrence_interval') || 1}
+                          onChange={(e) => setValue('recurrence_interval', parseInt(e.target.value) || 1)}
+                        />
+                        <span className="text-sm text-muted-foreground">
+                          {watchRecurrenceType === 'weekly' ? 'week(s)' :
+                           watchRecurrenceType === 'monthly' ? 'month(s)' :
+                           watchRecurrenceType === 'yearly' ? 'year(s)' : 'day(s)'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {watchRecurrenceType === 'weekly' && (
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">On days</Label>
+                    <div className="flex flex-wrap gap-1">
+                      {recurrenceDayOptions.map((day) => (
+                        <Button
+                          key={day.value}
+                          type="button"
+                          variant={watchRecurrenceDays.includes(day.value as RecurrenceDay) ? 'default' : 'outline'}
+                          size="sm"
+                          className="h-8 w-10 p-0 text-xs"
+                          onClick={() => handleRecurrenceDayToggle(day.value as RecurrenceDay)}
+                        >
+                          {day.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">End date (optional)</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={cn(
+                          'w-full justify-start text-left font-normal h-9',
+                          !recurrenceEndDate && 'text-muted-foreground'
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-3.5 w-3.5" />
+                        {recurrenceEndDate ? format(recurrenceEndDate, 'MMM d, yyyy') : 'No end date'}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <div className="p-2 border-b">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="w-full"
+                          onClick={() => {
+                            setRecurrenceEndDate(undefined)
+                            setValue('recurrence_end_date', null)
+                          }}
+                        >
+                          Clear end date
+                        </Button>
+                      </div>
+                      <Calendar
+                        mode="single"
+                        selected={recurrenceEndDate}
+                        onSelect={handleRecurrenceEndDateSelect}
+                        disabled={(date) => date < new Date()}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">

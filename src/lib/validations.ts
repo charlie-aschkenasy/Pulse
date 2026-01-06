@@ -59,6 +59,25 @@ export const viewCategoryOptions = [
   { value: 'monthly', label: 'Monthly' },
 ] as const
 
+export const recurrenceTypeOptions = [
+  { value: 'none', label: 'None' },
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'yearly', label: 'Yearly' },
+  { value: 'custom', label: 'Custom' },
+] as const
+
+export const recurrenceDayOptions = [
+  { value: 'mon', label: 'Mon', fullLabel: 'Monday' },
+  { value: 'tue', label: 'Tue', fullLabel: 'Tuesday' },
+  { value: 'wed', label: 'Wed', fullLabel: 'Wednesday' },
+  { value: 'thu', label: 'Thu', fullLabel: 'Thursday' },
+  { value: 'fri', label: 'Fri', fullLabel: 'Friday' },
+  { value: 'sat', label: 'Sat', fullLabel: 'Saturday' },
+  { value: 'sun', label: 'Sun', fullLabel: 'Sunday' },
+] as const
+
 export const projectColors = [
   { value: '#3B82F6', label: 'Blue' },
   { value: '#10B981', label: 'Green' },
@@ -101,9 +120,49 @@ export const taskSchema = z.object({
   urgent: z.boolean(),
   important: z.boolean(),
   view_category: z.enum(['daily', 'weekly', 'monthly']),
+  is_recurring: z.boolean().optional(),
+  recurrence_type: z.enum(['daily', 'weekly', 'monthly', 'yearly', 'custom']).nullable().optional(),
+  recurrence_interval: z.number().min(1).optional(),
+  recurrence_days: z.array(z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])).optional(),
+  recurrence_end_date: z.string().nullable().optional(),
 })
 
 export type LoginFormData = z.infer<typeof loginSchema>
 export type SignupFormData = z.infer<typeof signupSchema>
 export type ProjectFormData = z.infer<typeof projectSchema>
 export type TaskFormData = z.infer<typeof taskSchema>
+
+// Format recurrence for display
+export function formatRecurrence(
+  recurrenceType: string | null,
+  recurrenceInterval: number,
+  recurrenceDays: string[]
+): string {
+  if (!recurrenceType) return ''
+
+  const interval = recurrenceInterval || 1
+  const plural = interval > 1
+
+  switch (recurrenceType) {
+    case 'daily':
+      return interval === 1 ? 'Daily' : `Every ${interval} days`
+    case 'weekly':
+      if (recurrenceDays && recurrenceDays.length > 0) {
+        const dayLabels = recurrenceDays
+          .map(d => recurrenceDayOptions.find(o => o.value === d)?.label || d)
+          .join(', ')
+        return interval === 1
+          ? `Weekly on ${dayLabels}`
+          : `Every ${interval} weeks on ${dayLabels}`
+      }
+      return interval === 1 ? 'Weekly' : `Every ${interval} weeks`
+    case 'monthly':
+      return interval === 1 ? 'Monthly' : `Every ${interval} months`
+    case 'yearly':
+      return interval === 1 ? 'Yearly' : `Every ${interval} years`
+    case 'custom':
+      return `Every ${interval} day${plural ? 's' : ''}`
+    default:
+      return ''
+  }
+}

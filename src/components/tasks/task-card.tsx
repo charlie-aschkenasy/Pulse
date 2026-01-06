@@ -25,11 +25,14 @@ import {
   Trash2,
   Archive,
   FolderOpen,
+  Repeat,
+  SkipForward,
+  ListChecks,
 } from 'lucide-react'
-import { completeTask, deleteTask, archiveTask, updateTask } from '@/app/actions/tasks'
+import { completeTask, deleteTask, archiveTask, updateTask, completeRecurringTask, skipTaskOccurrence } from '@/app/actions/tasks'
 import { toast } from 'sonner'
 import type { Task, Project } from '@/types/database'
-import { formatDuration } from '@/lib/validations'
+import { formatDuration, formatRecurrence } from '@/lib/validations'
 
 interface TaskCardProps {
   task: Task & { project?: Project | null }
@@ -37,9 +40,11 @@ interface TaskCardProps {
   onStatusChange?: (taskId: string, newStatus: string) => void
   onDelete?: (taskId: string) => void
   onArchive?: (taskId: string) => void
+  onSkip?: (taskId: string) => void
   showProject?: boolean
   compact?: boolean
   isDraggable?: boolean
+  subtaskCount?: { completed: number; total: number }
 }
 
 const priorityBorderColors = {
@@ -70,9 +75,11 @@ export function TaskCard({
   onStatusChange,
   onDelete,
   onArchive,
+  onSkip,
   showProject = true,
   compact = false,
   isDraggable = true,
+  subtaskCount,
 }: TaskCardProps) {
   const [isLoading, setIsLoading] = useState(false)
 
@@ -108,11 +115,38 @@ export function TaskCard({
 
     // Fallback to direct update
     setIsLoading(true)
-    const { error } = await updateTask(task.id, { status: newStatus })
-    if (error) {
-      toast.error('Failed to update task')
+
+    // Use completeRecurringTask for recurring tasks to create next occurrence
+    if (task.is_recurring && newStatus === 'completed') {
+      const { error } = await completeRecurringTask(task.id)
+      if (error) {
+        toast.error('Failed to complete task')
+      } else {
+        toast.success('Task completed! Next occurrence created.')
+      }
     } else {
-      toast.success(newStatus === 'completed' ? 'Task completed!' : 'Task reopened')
+      const { error } = await updateTask(task.id, { status: newStatus })
+      if (error) {
+        toast.error('Failed to update task')
+      } else {
+        toast.success(newStatus === 'completed' ? 'Task completed!' : 'Task reopened')
+      }
+    }
+    setIsLoading(false)
+  }
+
+  const handleSkip = async () => {
+    if (onSkip) {
+      onSkip(task.id)
+      return
+    }
+
+    setIsLoading(true)
+    const { error } = await skipTaskOccurrence(task.id)
+    if (error) {
+      toast.error('Failed to skip occurrence')
+    } else {
+      toast.success('Occurrence skipped')
     }
     setIsLoading(false)
   }
@@ -182,15 +216,20 @@ export function TaskCard({
           className="shrink-0"
         />
 
-        <Link
-          href={`/tasks/${task.id}`}
-          className={cn(
-            'flex-1 text-sm truncate hover:underline',
-            task.status === 'completed' && 'line-through text-muted-foreground'
+        <div className="flex items-center gap-1 flex-1 min-w-0">
+          <Link
+            href={`/tasks/${task.id}`}
+            className={cn(
+              'text-sm truncate hover:underline',
+              task.status === 'completed' && 'line-through text-muted-foreground'
+            )}
+          >
+            {task.title}
+          </Link>
+          {task.is_recurring && (
+            <Repeat className="h-3 w-3 text-primary shrink-0" />
           )}
-        >
-          {task.title}
-        </Link>
+        </div>
 
         <div className="flex items-center gap-2">
           {showProject && task.project && (
@@ -248,15 +287,20 @@ export function TaskCard({
 
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2">
-          <Link
-            href={`/tasks/${task.id}`}
-            className={cn(
-              'font-medium hover:underline',
-              task.status === 'completed' && 'line-through text-muted-foreground'
+          <div className="flex items-center gap-1.5">
+            <Link
+              href={`/tasks/${task.id}`}
+              className={cn(
+                'font-medium hover:underline',
+                task.status === 'completed' && 'line-through text-muted-foreground'
+              )}
+            >
+              {task.title}
+            </Link>
+            {task.is_recurring && (
+              <Repeat className="h-3.5 w-3.5 text-primary shrink-0" />
             )}
-          >
-            {task.title}
-          </Link>
+          </div>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -281,6 +325,12 @@ export function TaskCard({
                   Open
                 </Link>
               </DropdownMenuItem>
+              {task.is_recurring && (
+                <DropdownMenuItem onClick={handleSkip}>
+                  <SkipForward className="mr-2 h-4 w-4" />
+                  Skip this occurrence
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleArchive}>
                 <Archive className="mr-2 h-4 w-4" />
@@ -316,6 +366,30 @@ export function TaskCard({
             <div className="flex items-center gap-1">
               <Clock className="h-3.5 w-3.5" />
               <span>{formatDuration(task.duration_minutes)}</span>
+            </div>
+          )}
+
+          {task.is_recurring && task.recurrence_type && (
+            <div className="flex items-center gap-1 text-primary">
+              <Repeat className="h-3.5 w-3.5" />
+              <span className="text-xs">
+                {formatRecurrence(task.recurrence_type, task.recurrence_interval, task.recurrence_days || [])}
+              </span>
+            </div>
+          )}
+
+          {subtaskCount && subtaskCount.total > 0 && (
+            <div className="flex items-center gap-1.5">
+              <ListChecks className="h-3.5 w-3.5" />
+              <span className="text-xs">{subtaskCount.completed}/{subtaskCount.total}</span>
+              <div className="w-10 h-1 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all"
+                  style={{
+                    width: `${(subtaskCount.completed / subtaskCount.total) * 100}%`,
+                  }}
+                />
+              </div>
             </div>
           )}
 

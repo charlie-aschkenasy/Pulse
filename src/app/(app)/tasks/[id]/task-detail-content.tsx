@@ -31,16 +31,24 @@ import {
   Trash2,
   Check,
   Loader2,
+  Repeat,
+  ListChecks,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react'
 import { TipTapEditor } from '@/components/tasks/tiptap-editor'
+import { SubtaskList } from '@/components/tasks/subtask-list'
 import { updateTask, updateTaskEditorContent, deleteTask } from '@/app/actions/tasks'
 import { toast } from 'sonner'
-import type { Task, Project } from '@/types/database'
+import type { Task, Project, RecurrenceDay } from '@/types/database'
 import {
   taskPriorityOptions,
   taskStatusOptions,
   formatDuration,
   parseDuration,
+  recurrenceTypeOptions,
+  recurrenceDayOptions,
+  formatRecurrence,
 } from '@/lib/validations'
 import { useWalkthrough } from '@/components/onboarding/walkthrough-context'
 
@@ -68,6 +76,11 @@ export function TaskDetailContent({ task: initialTask, projects, userId }: TaskD
   const [isSaving, setIsSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState<Date | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [recurrenceEndDate, setRecurrenceEndDate] = useState<Date | undefined>(
+    task.recurrence_end_date ? new Date(task.recurrence_end_date + 'T00:00:00') : undefined
+  )
+  const [subtaskCounts, setSubtaskCounts] = useState({ completed: 0, total: 0 })
+  const [isSubtasksExpanded, setIsSubtasksExpanded] = useState(true)
 
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -178,6 +191,69 @@ export function TaskDetailContent({ task: initialTask, projects, userId }: TaskD
     }
     setIsSaving(false)
   }
+
+  const handleRecurrenceToggle = async (checked: boolean) => {
+    setIsSaving(true)
+    const updates: Record<string, unknown> = {
+      is_recurring: checked,
+    }
+    // Set default recurrence type when enabling
+    if (checked && !task.recurrence_type) {
+      updates.recurrence_type = 'daily'
+    }
+    // Clear recurrence settings when disabling
+    if (!checked) {
+      updates.recurrence_type = null
+      updates.recurrence_interval = 1
+      updates.recurrence_days = []
+      updates.recurrence_end_date = null
+      setRecurrenceEndDate(undefined)
+    }
+    const { data, error } = await updateTask(task.id, updates)
+    if (error) {
+      toast.error('Failed to update recurrence')
+    } else if (data) {
+      setTask(data)
+      setLastSaved(new Date())
+    }
+    setIsSaving(false)
+  }
+
+  const handleRecurrenceEndDateChange = async (newDate: Date | undefined) => {
+    setRecurrenceEndDate(newDate)
+    setIsSaving(true)
+    const { data, error } = await updateTask(task.id, {
+      recurrence_end_date: newDate ? format(newDate, 'yyyy-MM-dd') : null,
+    })
+    if (error) {
+      toast.error('Failed to update recurrence end date')
+    } else if (data) {
+      setTask(data)
+      setLastSaved(new Date())
+    }
+    setIsSaving(false)
+  }
+
+  const handleRecurrenceDayToggle = async (day: RecurrenceDay) => {
+    const currentDays = task.recurrence_days || []
+    const newDays = currentDays.includes(day)
+      ? currentDays.filter((d) => d !== day)
+      : [...currentDays, day]
+
+    setIsSaving(true)
+    const { data, error } = await updateTask(task.id, { recurrence_days: newDays })
+    if (error) {
+      toast.error('Failed to update recurrence days')
+    } else if (data) {
+      setTask(data)
+      setLastSaved(new Date())
+    }
+    setIsSaving(false)
+  }
+
+  const handleSubtaskCountChange = useCallback((completed: number, total: number) => {
+    setSubtaskCounts({ completed, total })
+  }, [])
 
   const handleDelete = async () => {
     // Skip confirmation during walkthrough
@@ -382,6 +458,188 @@ export function TaskDetailContent({ task: initialTask, projects, userId }: TaskD
             />
             {task.project.name}
           </Badge>
+        )}
+      </div>
+
+      {/* Subtasks Section */}
+      <div className="space-y-3 p-4 border rounded-lg">
+        <button
+          onClick={() => setIsSubtasksExpanded(!isSubtasksExpanded)}
+          className="flex items-center justify-between w-full text-left"
+        >
+          <div className="flex items-center gap-2">
+            <ListChecks className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">Subtasks</span>
+            {subtaskCounts.total > 0 && (
+              <span className="text-xs text-muted-foreground">
+                ({subtaskCounts.completed}/{subtaskCounts.total})
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {subtaskCounts.total > 0 && (
+              <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all"
+                  style={{
+                    width: `${(subtaskCounts.completed / subtaskCounts.total) * 100}%`,
+                  }}
+                />
+              </div>
+            )}
+            {isSubtasksExpanded ? (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            )}
+          </div>
+        </button>
+
+        {isSubtasksExpanded && (
+          <div className="pt-2">
+            <SubtaskList
+              taskId={task.id}
+              onCountChange={handleSubtaskCountChange}
+            />
+
+            {/* Auto-complete toggle */}
+            <div className="flex items-center gap-2 pt-4 mt-4 border-t">
+              <Switch
+                id="auto_complete_subtasks"
+                checked={task.auto_complete_subtasks}
+                onCheckedChange={(checked) => handleFieldChange('auto_complete_subtasks', checked)}
+              />
+              <Label htmlFor="auto_complete_subtasks" className="text-xs text-muted-foreground">
+                Auto-complete task when all subtasks are done
+              </Label>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Recurrence Section */}
+      <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Repeat className="h-4 w-4 text-muted-foreground" />
+            <Label htmlFor="is_recurring" className="text-sm font-medium">
+              Repeat
+            </Label>
+            {task.is_recurring && task.recurrence_type && (
+              <span className="text-xs text-muted-foreground">
+                ({formatRecurrence(task.recurrence_type, task.recurrence_interval, task.recurrence_days || [])})
+              </span>
+            )}
+          </div>
+          <Switch
+            id="is_recurring"
+            checked={task.is_recurring}
+            onCheckedChange={handleRecurrenceToggle}
+          />
+        </div>
+
+        {task.is_recurring && (
+          <div className="space-y-3 pt-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Frequency</Label>
+                <Select
+                  value={task.recurrence_type || 'daily'}
+                  onValueChange={(value) => handleFieldChange('recurrence_type', value)}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {recurrenceTypeOptions.filter(o => o.value !== 'none').map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {(task.recurrence_type === 'custom' || task.recurrence_type === 'weekly' || task.recurrence_type === 'monthly' || task.recurrence_type === 'yearly') && (
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Every</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min="1"
+                      max="365"
+                      className="h-9 w-16"
+                      value={task.recurrence_interval || 1}
+                      onChange={(e) => handleFieldChange('recurrence_interval', parseInt(e.target.value) || 1)}
+                    />
+                    <span className="text-sm text-muted-foreground">
+                      {task.recurrence_type === 'weekly' ? 'week(s)' :
+                       task.recurrence_type === 'monthly' ? 'month(s)' :
+                       task.recurrence_type === 'yearly' ? 'year(s)' : 'day(s)'}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {task.recurrence_type === 'weekly' && (
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">On days</Label>
+                <div className="flex flex-wrap gap-1">
+                  {recurrenceDayOptions.map((day) => (
+                    <Button
+                      key={day.value}
+                      type="button"
+                      variant={(task.recurrence_days || []).includes(day.value as RecurrenceDay) ? 'default' : 'outline'}
+                      size="sm"
+                      className="h-8 w-10 p-0 text-xs"
+                      onClick={() => handleRecurrenceDayToggle(day.value as RecurrenceDay)}
+                    >
+                      {day.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">End date (optional)</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={cn(
+                      'w-full justify-start text-left font-normal h-9',
+                      !recurrenceEndDate && 'text-muted-foreground'
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-3.5 w-3.5" />
+                    {recurrenceEndDate ? format(recurrenceEndDate, 'MMM d, yyyy') : 'No end date'}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <div className="p-2 border-b">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => handleRecurrenceEndDateChange(undefined)}
+                    >
+                      Clear end date
+                    </Button>
+                  </div>
+                  <Calendar
+                    mode="single"
+                    selected={recurrenceEndDate}
+                    onSelect={handleRecurrenceEndDateChange}
+                    disabled={(date) => date < new Date()}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
         )}
       </div>
 

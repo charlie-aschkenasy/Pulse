@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -21,9 +22,11 @@ import {
   LogOut,
   User,
   HelpCircle,
+  Search,
 } from 'lucide-react'
 import { resetOnboarding } from '@/components/onboarding/onboarding-tour'
 import { toast } from 'sonner'
+import { SearchModal } from '@/components/search/search-modal'
 
 interface NavbarProps {
   email: string
@@ -40,6 +43,29 @@ export function Navbar({ email, taskCount }: NavbarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
+  const [searchOpen, setSearchOpen] = useState(false)
+
+  // Keyboard shortcut for search (Cmd+K or /)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd+K or Ctrl+K
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setSearchOpen(true)
+      }
+      // / key (when not in an input)
+      if (
+        e.key === '/' &&
+        !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)
+      ) {
+        e.preventDefault()
+        setSearchOpen(true)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   const handleSignOut = async () => {
     const { error } = await supabase.auth.signOut()
@@ -96,8 +122,31 @@ export function Navbar({ email, taskCount }: NavbarProps) {
           })}
         </nav>
 
-        {/* Task Count */}
+        {/* Search and Task Count */}
         <div className="flex items-center gap-4">
+          {/* Search Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setSearchOpen(true)}
+            className="hidden sm:flex items-center gap-2 text-muted-foreground hover:text-foreground"
+          >
+            <Search className="h-4 w-4" />
+            <span className="text-sm">Search</span>
+            <kbd className="ml-2 pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+              <span className="text-xs">&#8984;</span>K
+            </kbd>
+          </Button>
+          {/* Mobile search button */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setSearchOpen(true)}
+            className="sm:hidden h-8 w-8"
+          >
+            <Search className="h-4 w-4" />
+          </Button>
+
           <div className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground">
             <span className="font-medium text-foreground">{taskCount}</span>
             <span>tasks</span>
@@ -155,6 +204,9 @@ export function Navbar({ email, taskCount }: NavbarProps) {
           </DropdownMenu>
         </div>
       </div>
+
+      {/* Search Modal */}
+      <SearchModal open={searchOpen} onOpenChange={setSearchOpen} />
     </header>
   )
 }
