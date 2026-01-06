@@ -19,14 +19,18 @@ import { GripVertical, MoreHorizontal, Pencil, Trash2, Plus } from 'lucide-react
 import { deleteProject } from '@/app/actions/projects'
 import { toast } from 'sonner'
 import { TaskCard } from '@/components/tasks/task-card'
-import type { Project, Task } from '@/types/database'
+import { InlineSubtaskList } from '@/components/tasks/inline-subtask-list'
+import type { Project, Task, Subtask } from '@/types/database'
+
+type TaskWithSubtasks = Task & { subtasks?: Subtask[] }
 
 interface ProjectCardProps {
   project: Project & { total_tasks: number; completed_tasks: number }
-  tasks: Task[]
+  tasks: TaskWithSubtasks[]
   onEdit: (project: Project) => void
   onAddTask: (projectId: string) => void
   onEditTask: (task: Task) => void
+  onSubtaskUpdate?: () => void
   isDraggable?: boolean
 }
 
@@ -36,6 +40,7 @@ export function ProjectCard({
   onEdit,
   onAddTask,
   onEditTask,
+  onSubtaskUpdate,
   isDraggable = true,
 }: ProjectCardProps) {
   const [isDeleting, setIsDeleting] = useState(false)
@@ -147,13 +152,21 @@ export function ProjectCard({
           <ScrollArea className="h-[300px] pr-4">
             <div className="space-y-2">
               {tasks.map((task) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  onEdit={onEditTask}
-                  showProject={false}
-                  compact
-                />
+                <div key={task.id}>
+                  <TaskCard
+                    task={task}
+                    onEdit={onEditTask}
+                    showProject={false}
+                    compact
+                  />
+                  {task.subtasks && task.subtasks.length > 0 && (
+                    <InlineSubtaskList
+                      taskId={task.id}
+                      subtasks={task.subtasks}
+                      onSubtaskUpdate={onSubtaskUpdate}
+                    />
+                  )}
+                </div>
               ))}
             </div>
           </ScrollArea>

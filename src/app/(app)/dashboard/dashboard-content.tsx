@@ -37,12 +37,14 @@ import {
 import { TaskList } from '@/components/tasks/task-list'
 import { TaskCard } from '@/components/tasks/task-card'
 import { TaskModal } from '@/components/tasks/task-modal'
-import { getTaskCounts, getTasksByViewCategory, updateTask, deleteTask, archiveTask } from '@/app/actions/tasks'
+import { getTaskCounts, getTasksWithSubtasksByViewCategory, updateTask, deleteTask, archiveTask } from '@/app/actions/tasks'
 import { getProjects } from '@/app/actions/projects'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import type { Task, Project, ViewCategory } from '@/types/database'
+import type { Task, Project, ViewCategory, Subtask } from '@/types/database'
 import { useWalkthrough } from '@/components/onboarding/walkthrough-context'
+
+type TaskWithSubtasks = Task & { project?: Project | null; subtasks: Subtask[] }
 
 interface CategorySection {
   id: ViewCategory
@@ -64,14 +66,16 @@ function DroppableSection({
   onStatusChange,
   onDelete,
   onArchive,
+  onSubtaskUpdate,
 }: {
   category: CategorySection
-  tasks: (Task & { project?: Project | null })[]
+  tasks: TaskWithSubtasks[]
   onEdit: (task: Task) => void
   onAddTask: (category: ViewCategory) => void
   onStatusChange: (taskId: string, newStatus: string) => void
   onDelete: (taskId: string) => void
   onArchive: (taskId: string) => void
+  onSubtaskUpdate?: (subtask: Subtask) => void
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: category.id,
@@ -105,6 +109,8 @@ function DroppableSection({
           emptyMessage={`No ${category.id} tasks`}
           compact
           useExternalDnd
+          showSubtasks
+          onSubtaskUpdate={onSubtaskUpdate}
         />
       </CardContent>
     </Card>
@@ -115,9 +121,9 @@ export function DashboardContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const walkthrough = useWalkthrough()
-  const [dailyTasks, setDailyTasks] = useState<(Task & { project?: Project | null })[]>([])
-  const [weeklyTasks, setWeeklyTasks] = useState<(Task & { project?: Project | null })[]>([])
-  const [monthlyTasks, setMonthlyTasks] = useState<(Task & { project?: Project | null })[]>([])
+  const [dailyTasks, setDailyTasks] = useState<TaskWithSubtasks[]>([])
+  const [weeklyTasks, setWeeklyTasks] = useState<TaskWithSubtasks[]>([])
+  const [monthlyTasks, setMonthlyTasks] = useState<TaskWithSubtasks[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [taskCounts, setTaskCounts] = useState({ total: 0, completed: 0, overdue: 0, dueToday: 0 })
   const [isLoading, setIsLoading] = useState(true)
@@ -126,7 +132,7 @@ export function DashboardContent() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [defaultViewCategory, setDefaultViewCategory] = useState<ViewCategory>('daily')
-  const [activeTask, setActiveTask] = useState<(Task & { project?: Project | null }) | null>(null)
+  const [activeTask, setActiveTask] = useState<TaskWithSubtasks | null>(null)
 
   // Check if walkthrough should be started via URL param
   const forceTour = searchParams.get('tour') === 'true'
@@ -156,7 +162,7 @@ export function DashboardContent() {
     })
   )
 
-  const filterTasks = useCallback((tasks: (Task & { project?: Project | null })[]) => {
+  const filterTasks = useCallback((tasks: TaskWithSubtasks[]) => {
     let filtered = tasks
     if (!showCompleted) {
       filtered = filtered.filter(t => t.status !== 'completed')
@@ -173,16 +179,16 @@ export function DashboardContent() {
       const [projectsRes, countsRes, dailyRes, weeklyRes, monthlyRes] = await Promise.all([
         getProjects(),
         getTaskCounts(),
-        getTasksByViewCategory('daily'),
-        getTasksByViewCategory('weekly'),
-        getTasksByViewCategory('monthly'),
+        getTasksWithSubtasksByViewCategory('daily'),
+        getTasksWithSubtasksByViewCategory('weekly'),
+        getTasksWithSubtasksByViewCategory('monthly'),
       ])
 
       if (projectsRes.data) setProjects(projectsRes.data)
       if (countsRes.data) setTaskCounts(countsRes.data)
-      if (dailyRes.data) setDailyTasks(dailyRes.data as (Task & { project?: Project | null })[])
-      if (weeklyRes.data) setWeeklyTasks(weeklyRes.data as (Task & { project?: Project | null })[])
-      if (monthlyRes.data) setMonthlyTasks(monthlyRes.data as (Task & { project?: Project | null })[])
+      if (dailyRes.data) setDailyTasks(dailyRes.data as TaskWithSubtasks[])
+      if (weeklyRes.data) setWeeklyTasks(weeklyRes.data as TaskWithSubtasks[])
+      if (monthlyRes.data) setMonthlyTasks(monthlyRes.data as TaskWithSubtasks[])
     } finally {
       setIsLoading(false)
     }
@@ -201,7 +207,7 @@ export function DashboardContent() {
     }
   }
 
-  const setTasksState = (category: ViewCategory, tasks: (Task & { project?: Project | null })[]) => {
+  const setTasksState = (category: ViewCategory, tasks: TaskWithSubtasks[]) => {
     switch (category) {
       case 'daily': setDailyTasks(tasks); break
       case 'weekly': setWeeklyTasks(tasks); break
@@ -242,7 +248,7 @@ export function DashboardContent() {
   }
 
   // Add a task to a category array
-  const addTaskToState = (task: Task & { project?: Project | null }, category: ViewCategory) => {
+  const addTaskToState = (task: TaskWithSubtasks, category: ViewCategory) => {
     const tasks = getTasksState(category)
     setTasksState(category, [...tasks, task])
   }
@@ -261,20 +267,23 @@ export function DashboardContent() {
   const handleSuccess = (task?: Task & { project?: Project | null }) => {
     if (task) {
       const existingCategory = findTaskCategory(task.id)
+      // Add empty subtasks array for new tasks from modal
+      const taskWithSubtasks: TaskWithSubtasks = { ...task, subtasks: [] }
 
       if (existingCategory) {
         // Task was edited
         if (existingCategory === task.view_category) {
-          // Same category - just update in place
-          updateTaskInState(task.id, task)
+          // Same category - just update in place (preserve existing subtasks)
+          const existingTask = getTasksState(existingCategory).find(t => t.id === task.id)
+          updateTaskInState(task.id, { ...task, subtasks: existingTask?.subtasks || [] })
         } else {
-          // Category changed - move to new category
-          removeTaskFromState(task.id)
-          addTaskToState(task, task.view_category)
+          // Category changed - move to new category (preserve existing subtasks)
+          const existingTask = removeTaskFromState(task.id)
+          addTaskToState({ ...taskWithSubtasks, subtasks: existingTask?.subtasks || [] }, task.view_category)
         }
       } else {
         // New task - add to appropriate category
-        addTaskToState(task, task.view_category)
+        addTaskToState(taskWithSubtasks, task.view_category)
 
         // Walkthrough: track tutorial task and advance
         if (walkthrough.isActive && walkthrough.currentStep === 'fill-task-form') {
@@ -292,6 +301,12 @@ export function DashboardContent() {
       loadData()
     }
   }
+
+  // Handle subtask updates (reload to get fresh data)
+  const handleSubtaskUpdate = useCallback(() => {
+    // Reload data to reflect subtask changes
+    loadData()
+  }, [loadData])
 
   const handleNewTask = (category: ViewCategory) => {
     setDefaultViewCategory(category)
@@ -573,6 +588,7 @@ export function DashboardContent() {
               onStatusChange={handleStatusChange}
               onDelete={handleDelete}
               onArchive={handleArchive}
+              onSubtaskUpdate={handleSubtaskUpdate}
             />
           ))}
         </div>

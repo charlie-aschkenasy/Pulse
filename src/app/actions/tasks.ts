@@ -94,6 +94,118 @@ export async function getTasksByViewCategory(viewCategory: ViewCategory) {
   return { data, error: null }
 }
 
+export async function getTasksWithSubtasksByViewCategory(viewCategory: ViewCategory) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { error: 'Not authenticated', data: null }
+  }
+
+  // Get tasks
+  const { data: tasks, error: tasksError } = await supabase
+    .from('tasks')
+    .select('*, project:projects(*)')
+    .eq('user_id', user.id)
+    .eq('view_category', viewCategory)
+    .neq('status', 'archived')
+    .order('list_sort_index', { ascending: true })
+
+  if (tasksError) {
+    return { error: tasksError.message, data: null }
+  }
+
+  if (!tasks || tasks.length === 0) {
+    return { data: [], error: null }
+  }
+
+  // Get subtasks for all tasks
+  const taskIds = tasks.map(t => t.id)
+  const { data: subtasks, error: subtasksError } = await supabase
+    .from('subtasks')
+    .select('*')
+    .eq('user_id', user.id)
+    .in('task_id', taskIds)
+    .order('sort_index', { ascending: true })
+
+  if (subtasksError) {
+    return { error: subtasksError.message, data: null }
+  }
+
+  // Group subtasks by task_id
+  const subtasksByTaskId: Record<string, typeof subtasks> = {}
+  for (const subtask of subtasks || []) {
+    if (!subtasksByTaskId[subtask.task_id]) {
+      subtasksByTaskId[subtask.task_id] = []
+    }
+    subtasksByTaskId[subtask.task_id].push(subtask)
+  }
+
+  // Merge subtasks into tasks
+  const tasksWithSubtasks = tasks.map(task => ({
+    ...task,
+    subtasks: subtasksByTaskId[task.id] || [],
+  }))
+
+  return { data: tasksWithSubtasks, error: null }
+}
+
+export async function getTasksWithSubtasksByProject(projectId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { error: 'Not authenticated', data: null }
+  }
+
+  // Get tasks
+  const { data: tasks, error: tasksError } = await supabase
+    .from('tasks')
+    .select('*, project:projects(*)')
+    .eq('user_id', user.id)
+    .eq('project_id', projectId)
+    .neq('status', 'archived')
+    .order('list_sort_index', { ascending: true })
+
+  if (tasksError) {
+    return { error: tasksError.message, data: null }
+  }
+
+  if (!tasks || tasks.length === 0) {
+    return { data: [], error: null }
+  }
+
+  // Get subtasks for all tasks
+  const taskIds = tasks.map(t => t.id)
+  const { data: subtasks, error: subtasksError } = await supabase
+    .from('subtasks')
+    .select('*')
+    .eq('user_id', user.id)
+    .in('task_id', taskIds)
+    .order('sort_index', { ascending: true })
+
+  if (subtasksError) {
+    return { error: subtasksError.message, data: null }
+  }
+
+  // Group subtasks by task_id
+  const subtasksByTaskId: Record<string, typeof subtasks> = {}
+  for (const subtask of subtasks || []) {
+    if (!subtasksByTaskId[subtask.task_id]) {
+      subtasksByTaskId[subtask.task_id] = []
+    }
+    subtasksByTaskId[subtask.task_id].push(subtask)
+  }
+
+  // Merge subtasks into tasks
+  const tasksWithSubtasks = tasks.map(task => ({
+    ...task,
+    subtasks: subtasksByTaskId[task.id] || [],
+  }))
+
+  return { data: tasksWithSubtasks, error: null }
+}
+
 export async function getOverdueTasks() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

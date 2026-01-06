@@ -24,15 +24,17 @@ import { ProjectCard } from '@/components/projects/project-card'
 import { ProjectModal } from '@/components/projects/project-modal'
 import { TaskModal } from '@/components/tasks/task-modal'
 import { getProjectsWithTaskCounts, reorderProjects } from '@/app/actions/projects'
-import { getTasksByProject, moveTaskToProject } from '@/app/actions/tasks'
+import { getTasksWithSubtasksByProject } from '@/app/actions/tasks'
 import { toast } from 'sonner'
-import type { Project, Task } from '@/types/database'
+import type { Project, Task, Subtask } from '@/types/database'
+
+type TaskWithSubtasks = Task & { subtasks: Subtask[] }
 
 type ProjectWithCounts = Project & { total_tasks: number; completed_tasks: number }
 
 export function ProjectsContent() {
   const [projects, setProjects] = useState<ProjectWithCounts[]>([])
-  const [tasksByProject, setTasksByProject] = useState<Record<string, Task[]>>({})
+  const [tasksByProject, setTasksByProject] = useState<Record<string, TaskWithSubtasks[]>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
@@ -59,12 +61,12 @@ export function ProjectsContent() {
         const projectsData = data as ProjectWithCounts[]
         setProjects(projectsData)
 
-        // Load tasks for each project
-        const tasksMap: Record<string, Task[]> = {}
+        // Load tasks with subtasks for each project
+        const tasksMap: Record<string, TaskWithSubtasks[]> = {}
         await Promise.all(
           projectsData.map(async (project: ProjectWithCounts) => {
-            const { data: tasks } = await getTasksByProject(project.id)
-            tasksMap[project.id] = (tasks || []) as Task[]
+            const { data: tasks } = await getTasksWithSubtasksByProject(project.id)
+            tasksMap[project.id] = (tasks || []) as TaskWithSubtasks[]
           })
         )
         setTasksByProject(tasksMap)
@@ -200,6 +202,7 @@ export function ProjectsContent() {
                 onEdit={handleProjectEdit}
                 onAddTask={handleAddTask}
                 onEditTask={handleTaskEdit}
+                onSubtaskUpdate={loadData}
               />
             ))}
           </div>

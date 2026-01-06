@@ -224,6 +224,11 @@ export interface TaskWithProject extends Task {
   project: Project | null
 }
 
+export interface TaskWithSubtasks extends Task {
+  project: Project | null
+  subtasks: Subtask[]
+}
+
 export interface ProjectWithTasks extends Project {
   tasks: Task[]
 }

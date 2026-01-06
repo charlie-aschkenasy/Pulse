@@ -17,12 +17,13 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { TaskCard } from './task-card'
+import { InlineSubtaskList } from './inline-subtask-list'
 import { reorderTasks } from '@/app/actions/tasks'
 import { toast } from 'sonner'
-import type { Task, Project } from '@/types/database'
+import type { Task, Project, Subtask } from '@/types/database'
 
 interface TaskListProps {
-  tasks: (Task & { project?: Project | null })[]
+  tasks: (Task & { project?: Project | null; subtasks?: Subtask[] })[]
   onEdit?: (task: Task) => void
   onStatusChange?: (taskId: string, newStatus: string) => void
   onDelete?: (taskId: string) => void
@@ -33,6 +34,10 @@ interface TaskListProps {
   emptyMessage?: string
   /** When true, uses external DndContext (for cross-list drag-and-drop) */
   useExternalDnd?: boolean
+  /** When true, displays subtasks inline under each task */
+  showSubtasks?: boolean
+  /** Callback when a subtask is updated */
+  onSubtaskUpdate?: (subtask: Subtask) => void
 }
 
 export function TaskList({
@@ -46,6 +51,8 @@ export function TaskList({
   isDraggable = true,
   emptyMessage = 'No tasks found',
   useExternalDnd = false,
+  showSubtasks = false,
+  onSubtaskUpdate,
 }: TaskListProps) {
   const [tasks, setTasks] = useState(initialTasks)
 
@@ -104,17 +111,25 @@ export function TaskList({
     >
       <div className="space-y-2">
         {tasks.map((task) => (
-          <TaskCard
-            key={task.id}
-            task={task}
-            onEdit={onEdit}
-            onStatusChange={onStatusChange}
-            onDelete={onDelete}
-            onArchive={onArchive}
-            showProject={showProject}
-            compact={compact}
-            isDraggable={isDraggable}
-          />
+          <div key={task.id}>
+            <TaskCard
+              task={task}
+              onEdit={onEdit}
+              onStatusChange={onStatusChange}
+              onDelete={onDelete}
+              onArchive={onArchive}
+              showProject={showProject}
+              compact={compact}
+              isDraggable={isDraggable}
+            />
+            {showSubtasks && task.subtasks && task.subtasks.length > 0 && (
+              <InlineSubtaskList
+                taskId={task.id}
+                subtasks={task.subtasks}
+                onSubtaskUpdate={onSubtaskUpdate}
+              />
+            )}
+          </div>
         ))}
       </div>
     </SortableContext>
