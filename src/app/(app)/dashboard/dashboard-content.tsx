@@ -273,9 +273,8 @@ export function DashboardContent() {
       if (existingCategory) {
         // Task was edited
         if (existingCategory === task.view_category) {
-          // Same category - just update in place (preserve existing subtasks)
-          const existingTask = getTasksState(existingCategory).find(t => t.id === task.id)
-          updateTaskInState(task.id, { ...task, subtasks: existingTask?.subtasks || [] })
+          // Same category - just update in place
+          updateTaskInState(task.id, task)
         } else {
           // Category changed - move to new category (preserve existing subtasks)
           const existingTask = removeTaskFromState(task.id)
