@@ -15,6 +15,16 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: 'Pulse - Modern Task Management',
   description: 'A cross-device task manager with Dashboard, Projects, and Covey Matrix views',
+  manifest: '/manifest.json',
+  themeColor: '#3b82f6',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Pulse',
+  },
+  icons: {
+    apple: '/icon-192.png',
+  },
 }
 
 export default function RootLayout({

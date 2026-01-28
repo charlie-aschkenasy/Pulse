@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -28,8 +28,38 @@ import {
   Loader2,
   HelpCircle,
   RotateCcw,
+  Check,
+  Phone,
+  Bell,
+  BellOff,
+  Smartphone,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react'
 import { resetOnboarding } from '@/components/onboarding/onboarding-tour'
+import {
+  isPushSupported,
+  isIOSDevice,
+  isPWAInstalled,
+  subscribeToPush,
+  unsubscribeFromPush,
+  getNotificationPermission,
+  serializeSubscription,
+  getExistingSubscription,
+} from '@/lib/push-notifications'
+import {
+  savePushSubscription,
+  removePushSubscription,
+  hasPushSubscription,
+  sendTestNotification,
+} from '@/app/actions/push'
+import {
+  getProfile,
+  updatePhoneNumber,
+  sendVerificationSms,
+  toggleSmsReminders,
+  updateTimezone,
+} from '@/app/actions/profile'
 
 const timezones = [
   { value: 'America/Mexico_City', label: 'Mexico City (CST)' },
@@ -48,7 +78,59 @@ export default function SettingsPage() {
   const router = useRouter()
   const supabase = createClient()
   const [isLoading, setIsLoading] = useState(false)
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true)
+
+  // Profile state
   const [timezone, setTimezone] = useState('America/Mexico_City')
+  const [phoneNumber, setPhoneNumber] = useState('')
+  const [phoneInput, setPhoneInput] = useState('')
+  const [smsEnabled, setSmsEnabled] = useState(false)
+  const [phoneVerified, setPhoneVerified] = useState(false)
+  const [isSavingPhone, setIsSavingPhone] = useState(false)
+  const [isSendingTestSms, setIsSendingTestSms] = useState(false)
+
+  // Push notification state
+  const [pushSupported, setPushSupported] = useState(false)
+  const [pushEnabled, setPushEnabled] = useState(false)
+  const [pushPermission, setPushPermission] = useState<NotificationPermission>('default')
+  const [isIOS, setIsIOS] = useState(false)
+  const [isPWA, setIsPWA] = useState(false)
+  const [isLoadingPush, setIsLoadingPush] = useState(false)
+  const [isSendingTestPush, setIsSendingTestPush] = useState(false)
+
+  // Load profile on mount
+  useEffect(() => {
+    async function loadProfile() {
+      const { data } = await getProfile()
+      if (data) {
+        setTimezone(data.timezone)
+        setPhoneNumber(data.phone_number || '')
+        setPhoneInput(data.phone_number || '')
+        setSmsEnabled(data.sms_reminders_enabled)
+        setPhoneVerified(data.phone_verified)
+      }
+      setIsLoadingProfile(false)
+    }
+    loadProfile()
+  }, [])
+
+  // Check push notification status on mount
+  useEffect(() => {
+    async function checkPushStatus() {
+      setPushSupported(isPushSupported())
+      setIsIOS(isIOSDevice())
+      setIsPWA(isPWAInstalled())
+
+      if (isPushSupported()) {
+        const permission = await getNotificationPermission()
+        setPushPermission(permission)
+
+        const hasSubscription = await hasPushSubscription()
+        setPushEnabled(hasSubscription)
+      }
+    }
+    checkPushStatus()
+  }, [])
 
   const handleSignOut = async () => {
     setIsLoading(true)
@@ -63,8 +145,109 @@ export default function SettingsPage() {
 
   const handleTimezoneChange = async (value: string) => {
     setTimezone(value)
-    // TODO: Update timezone in profile table
-    toast.success('Timezone updated')
+    const { error } = await updateTimezone(value)
+    if (error) {
+      toast.error('Failed to update timezone')
+    } else {
+      toast.success('Timezone updated')
+    }
+  }
+
+  const handleSavePhoneNumber = async () => {
+    if (!phoneInput.trim()) return
+
+    setIsSavingPhone(true)
+    const { data, error } = await updatePhoneNumber(phoneInput)
+    if (error) {
+      toast.error(error)
+    } else if (data) {
+      setPhoneNumber(data.phone_number || '')
+      setPhoneVerified(false)
+      setSmsEnabled(false)
+      toast.success('Phone number saved. Send a test SMS to verify.')
+    }
+    setIsSavingPhone(false)
+  }
+
+  const handleSendTestSms = async () => {
+    setIsSendingTestSms(true)
+    const { data, error } = await sendVerificationSms()
+    if (error) {
+      toast.error(error)
+    } else if (data) {
+      setPhoneVerified(true)
+      setSmsEnabled(true)
+      toast.success('Test SMS sent! SMS reminders are now enabled.')
+    }
+    setIsSendingTestSms(false)
+  }
+
+  const handleToggleSms = async (enabled: boolean) => {
+    const { data, error } = await toggleSmsReminders(enabled)
+    if (error) {
+      toast.error(error)
+    } else if (data) {
+      setSmsEnabled(data.sms_reminders_enabled)
+    }
+  }
+
+  // Push notification handlers
+  async function handleEnablePush() {
+    setIsLoadingPush(true)
+    try {
+      const subscription = await subscribeToPush()
+      const serialized = serializeSubscription(subscription)
+      const { error } = await savePushSubscription(serialized)
+
+      if (error) {
+        toast.error(error)
+      } else {
+        setPushEnabled(true)
+        setPushPermission('granted')
+        toast.success('Push notifications enabled!')
+      }
+    } catch (err: unknown) {
+      console.error('Failed to enable push:', err)
+      const message = err instanceof Error ? err.message : 'Failed to enable notifications'
+      if (message.includes('permission')) {
+        toast.error('Please allow notifications in your browser settings')
+      } else {
+        toast.error(message)
+      }
+    } finally {
+      setIsLoadingPush(false)
+    }
+  }
+
+  async function handleDisablePush() {
+    setIsLoadingPush(true)
+    try {
+      const subscription = await getExistingSubscription()
+      await unsubscribeFromPush()
+      await removePushSubscription(subscription?.endpoint)
+      setPushEnabled(false)
+      toast.success('Push notifications disabled')
+    } catch {
+      toast.error('Failed to disable notifications')
+    } finally {
+      setIsLoadingPush(false)
+    }
+  }
+
+  async function handleTestNotification() {
+    setIsSendingTestPush(true)
+    try {
+      const { error } = await sendTestNotification()
+      if (error) {
+        toast.error(error)
+      } else {
+        toast.success('Test notification sent!')
+      }
+    } catch {
+      toast.error('Failed to send test notification')
+    } finally {
+      setIsSendingTestPush(false)
+    }
   }
 
   return (
@@ -102,6 +285,194 @@ export default function SettingsPage() {
               </SelectContent>
             </Select>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Push Notifications */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bell className="h-5 w-5" />
+            Push Notifications
+          </CardTitle>
+          <CardDescription>
+            Get task reminders on your device, even when the app is closed
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!pushSupported ? (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <XCircle className="h-4 w-4" />
+              <span>Push notifications are not supported in this browser</span>
+            </div>
+          ) : isIOS && !isPWA ? (
+            <div className="space-y-3 p-4 bg-muted rounded-lg">
+              <div className="flex items-center gap-2 font-medium">
+                <Smartphone className="h-4 w-4" />
+                Install Pulse on your iPhone
+              </div>
+              <p className="text-sm text-muted-foreground">
+                To enable notifications on iOS, you need to add Pulse to your Home Screen first:
+              </p>
+              <ol className="text-sm text-muted-foreground list-decimal list-inside space-y-1">
+                <li>Tap the Share button in Safari</li>
+                <li>Scroll down and tap &quot;Add to Home Screen&quot;</li>
+                <li>Open Pulse from your Home Screen</li>
+                <li>Come back here to enable notifications</li>
+              </ol>
+            </div>
+          ) : pushPermission === 'denied' ? (
+            <div className="flex items-center gap-2 text-destructive">
+              <XCircle className="h-4 w-4" />
+              <span>Notifications blocked. Please enable them in your browser settings.</span>
+            </div>
+          ) : pushEnabled ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-green-600">
+                <CheckCircle2 className="h-4 w-4" />
+                <span>Push notifications are enabled</span>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={handleTestNotification}
+                  disabled={isSendingTestPush}
+                >
+                  {isSendingTestPush ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <Bell className="h-4 w-4 mr-2" />
+                  )}
+                  Send Test
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleDisablePush}
+                  disabled={isLoadingPush}
+                >
+                  {isLoadingPush ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <BellOff className="h-4 w-4 mr-2" />
+                  )}
+                  Disable
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button
+              onClick={handleEnablePush}
+              disabled={isLoadingPush}
+            >
+              {isLoadingPush ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Bell className="h-4 w-4 mr-2" />
+              )}
+              Enable Push Notifications
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* SMS Reminders */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5 text-green-600" />
+            <CardTitle>SMS Reminders</CardTitle>
+            {phoneVerified && (
+              <Badge variant="outline" className="ml-auto text-green-600 border-green-600">
+                <Check className="mr-1 h-3 w-3" />
+                Verified
+              </Badge>
+            )}
+          </div>
+          <CardDescription>
+            Receive task reminders via SMS
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Phone Number Input */}
+          <div className="space-y-2">
+            <Label htmlFor="phone">Phone Number</Label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="phone"
+                  type="tel"
+                  placeholder="(555) 123-4567"
+                  value={phoneInput}
+                  onChange={(e) => setPhoneInput(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              <Button
+                variant="outline"
+                onClick={handleSavePhoneNumber}
+                disabled={isSavingPhone || phoneInput === phoneNumber || !phoneInput.trim()}
+              >
+                {isSavingPhone ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  'Save'
+                )}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              US phone numbers only. Standard messaging rates apply.
+            </p>
+          </div>
+
+          {/* Test SMS Button */}
+          {phoneNumber && !phoneVerified && (
+            <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
+              <div>
+                <p className="text-sm font-medium">Verify your phone number</p>
+                <p className="text-xs text-muted-foreground">
+                  Send a test SMS to confirm it works
+                </p>
+              </div>
+              <Button
+                size="sm"
+                onClick={handleSendTestSms}
+                disabled={isSendingTestSms}
+              >
+                {isSendingTestSms ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <MessageSquare className="mr-2 h-4 w-4" />
+                )}
+                Send Test SMS
+              </Button>
+            </div>
+          )}
+
+          <Separator />
+
+          {/* SMS Toggle */}
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>Enable SMS Reminders</Label>
+              <p className="text-sm text-muted-foreground">
+                Receive SMS notifications for task reminders
+              </p>
+            </div>
+            <Switch
+              checked={smsEnabled}
+              onCheckedChange={handleToggleSms}
+              disabled={!phoneVerified}
+            />
+          </div>
+
+          {!phoneNumber && (
+            <div className="p-4 bg-muted rounded-lg">
+              <p className="text-sm text-muted-foreground">
+                Add your phone number above to enable SMS reminders.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -149,25 +520,9 @@ export default function SettingsPage() {
             <Switch disabled />
           </div>
 
-          <Separator />
-
-          {/* SMS Reminders Integration */}
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <div className="flex items-center gap-2">
-                <MessageSquare className="h-5 w-5 text-green-600" />
-                <Label className="font-medium">SMS Reminders</Label>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Receive task reminders via SMS
-              </p>
-            </div>
-            <Switch disabled />
-          </div>
-
           <div className="p-4 bg-muted rounded-lg">
             <p className="text-sm text-muted-foreground">
-              Integrations will be available in a future update. Stay tuned!
+              Calendar integration will be available in a future update.
             </p>
           </div>
         </CardContent>

@@ -165,6 +165,7 @@ export async function getTasksWithSubtasksByProject(projectId: string) {
     .eq('user_id', user.id)
     .eq('project_id', projectId)
     .neq('status', 'archived')
+    .neq('status', 'completed')
     .order('list_sort_index', { ascending: true })
 
   if (tasksError) {

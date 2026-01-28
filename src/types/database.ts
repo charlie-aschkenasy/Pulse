@@ -11,6 +11,19 @@ export type TaskPriority = 'high' | 'medium' | 'low'
 export type ViewCategory = 'daily' | 'weekly' | 'monthly'
 export type RecurrenceType = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom'
 export type RecurrenceDay = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'
+export type ReminderType = 'specific_time' | 'before_due'
+export type BeforeDueInterval = '15_minutes' | '30_minutes' | '1_hour' | '2_hours' | '1_day'
+export type NotificationType = 'sms' | 'push'
+
+export interface PushSubscriptionRow {
+  id: string
+  user_id: string
+  endpoint: string
+  p256dh: string
+  auth: string
+  user_agent: string | null
+  created_at: string
+}
 
 export interface Database {
   public: {
@@ -19,16 +32,28 @@ export interface Database {
         Row: {
           user_id: string
           timezone: string
+          phone_number: string | null
+          sms_reminders_enabled: boolean
+          phone_verified: boolean
+          push_enabled: boolean
           created_at: string
         }
         Insert: {
           user_id: string
           timezone?: string
+          phone_number?: string | null
+          sms_reminders_enabled?: boolean
+          phone_verified?: boolean
+          push_enabled?: boolean
           created_at?: string
         }
         Update: {
           user_id?: string
           timezone?: string
+          phone_number?: string | null
+          sms_reminders_enabled?: boolean
+          phone_verified?: boolean
+          push_enabled?: boolean
           created_at?: string
         }
       }
@@ -193,6 +218,63 @@ export interface Database {
           last_synced_at?: string
         }
       }
+      task_reminders: {
+        Row: {
+          id: string
+          task_id: string
+          user_id: string
+          reminder_type: ReminderType
+          remind_at: string | null
+          before_due_interval: BeforeDueInterval | null
+          notification_type: NotificationType
+          is_sent: boolean
+          sent_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          task_id: string
+          user_id: string
+          reminder_type: ReminderType
+          remind_at?: string | null
+          before_due_interval?: BeforeDueInterval | null
+          notification_type?: NotificationType
+          is_sent?: boolean
+          sent_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          task_id?: string
+          user_id?: string
+          reminder_type?: ReminderType
+          remind_at?: string | null
+          before_due_interval?: BeforeDueInterval | null
+          notification_type?: NotificationType
+          is_sent?: boolean
+          sent_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      push_subscriptions: {
+        Row: PushSubscriptionRow
+        Insert: {
+          user_id: string
+          endpoint: string
+          p256dh: string
+          auth: string
+          user_agent?: string | null
+        }
+        Update: {
+          endpoint?: string
+          p256dh?: string
+          auth?: string
+          user_agent?: string | null
+        }
+      }
     }
     Views: Record<string, never>
     Functions: Record<string, never>
@@ -202,6 +284,9 @@ export interface Database {
       view_category: ViewCategory
       recurrence_type: RecurrenceType
       recurrence_day: RecurrenceDay
+      reminder_type: ReminderType
+      before_due_interval: BeforeDueInterval
+      notification_type: NotificationType
     }
   }
 }
@@ -218,6 +303,11 @@ export type TaskInsert = Database['public']['Tables']['tasks']['Insert']
 export type TaskUpdate = Database['public']['Tables']['tasks']['Update']
 export type SubtaskInsert = Database['public']['Tables']['subtasks']['Insert']
 export type SubtaskUpdate = Database['public']['Tables']['subtasks']['Update']
+export type TaskReminder = Database['public']['Tables']['task_reminders']['Row']
+export type TaskReminderInsert = Database['public']['Tables']['task_reminders']['Insert']
+export type TaskReminderUpdate = Database['public']['Tables']['task_reminders']['Update']
+export type PushSubscription = Database['public']['Tables']['push_subscriptions']['Row']
+export type PushSubscriptionInsert = Database['public']['Tables']['push_subscriptions']['Insert']
 
 // Extended types with relations
 export interface TaskWithProject extends Task {

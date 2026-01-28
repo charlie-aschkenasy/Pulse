@@ -35,9 +35,11 @@ import {
   ListChecks,
   ChevronDown,
   ChevronRight,
+  Bell,
 } from 'lucide-react'
 import { TipTapEditor } from '@/components/tasks/tiptap-editor'
 import { SubtaskList } from '@/components/tasks/subtask-list'
+import { TaskReminders } from '@/components/tasks/task-reminders'
 import { updateTask, updateTaskEditorContent, deleteTask } from '@/app/actions/tasks'
 import { toast } from 'sonner'
 import type { Task, Project, RecurrenceDay } from '@/types/database'
@@ -81,6 +83,7 @@ export function TaskDetailContent({ task: initialTask, projects, userId }: TaskD
   )
   const [subtaskCounts, setSubtaskCounts] = useState({ completed: 0, total: 0 })
   const [isSubtasksExpanded, setIsSubtasksExpanded] = useState(true)
+  const [isRemindersExpanded, setIsRemindersExpanded] = useState(true)
 
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -513,6 +516,35 @@ export function TaskDetailContent({ task: initialTask, projects, userId }: TaskD
                 Auto-complete task when all subtasks are done
               </Label>
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* SMS Reminders Section */}
+      <div className="space-y-3 p-4 border rounded-lg">
+        <button
+          onClick={() => setIsRemindersExpanded(!isRemindersExpanded)}
+          className="flex items-center justify-between w-full text-left"
+        >
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">SMS Reminders</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {isRemindersExpanded ? (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            )}
+          </div>
+        </button>
+
+        {isRemindersExpanded && (
+          <div className="pt-2">
+            <TaskReminders
+              taskId={task.id}
+              taskDueDate={task.due_date}
+            />
           </div>
         )}
       </div>
