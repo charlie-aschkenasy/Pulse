@@ -1,14 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { sendTaskReminderSms } from '@/lib/twilio'
 import { sendTaskReminderPush } from '@/lib/web-push'
 import { subMinutes, subHours, subDays, format } from 'date-fns'
 
-// Create admin Supabase client (bypasses RLS)
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+// Lazy-initialize admin client to avoid build-time errors
+let supabaseAdmin: SupabaseClient | null = null
+
+function getSupabaseAdmin() {
+  if (!supabaseAdmin) {
+    supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return supabaseAdmin
+}
 
 interface ReminderResult {
   success: boolean
@@ -40,7 +47,7 @@ async function sendReminder(
     return sendTaskReminderSms(profile.phone_number, task.title, dueInfo)
   } else {
     // Push notification
-    const { data: subscriptions } = await supabaseAdmin
+    const { data: subscriptions } = await getSupabaseAdmin()
       .from('push_subscriptions')
       .select('*')
       .eq('user_id', reminder.user_id)
@@ -66,7 +73,7 @@ async function sendReminder(
         lastError = result.error || 'Unknown error'
         // If subscription is invalid, remove it
         if (result.error?.includes('expired') || result.error?.includes('unsubscribed')) {
-          await supabaseAdmin
+          await getSupabaseAdmin()
             .from('push_subscriptions')
             .delete()
             .eq('id', sub.id)
@@ -99,7 +106,7 @@ export async function GET(request: NextRequest) {
 
   try {
     // 1. Process specific_time reminders that are due
-    const { data: specificTimeReminders, error: specificError } = await supabaseAdmin
+    const { data: specificTimeReminders, error: specificError } = await getSupabaseAdmin()
       .from('task_reminders')
       .select(`
         *,
@@ -131,7 +138,7 @@ export async function GET(request: NextRequest) {
       )
 
       if (result.success) {
-        await supabaseAdmin
+        await getSupabaseAdmin()
           .from('task_reminders')
           .update({ is_sent: true, sent_at: now.toISOString() })
           .eq('id', reminder.id)
@@ -144,7 +151,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 2. Process before_due reminders
-    const { data: beforeDueReminders, error: beforeDueError } = await supabaseAdmin
+    const { data: beforeDueReminders, error: beforeDueError } = await getSupabaseAdmin()
       .from('task_reminders')
       .select(`
         *,
@@ -212,7 +219,7 @@ export async function GET(request: NextRequest) {
       )
 
       if (result.success) {
-        await supabaseAdmin
+        await getSupabaseAdmin()
           .from('task_reminders')
           .update({ is_sent: true, sent_at: now.toISOString() })
           .eq('id', reminder.id)
