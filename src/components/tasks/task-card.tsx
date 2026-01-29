@@ -220,7 +220,7 @@ export function TaskCard({
           <Link
             href={`/tasks/${task.id}`}
             className={cn(
-              'text-sm truncate hover:underline',
+              'text-sm break-words hover:underline',
               task.status === 'completed' && 'line-through text-muted-foreground'
             )}
           >

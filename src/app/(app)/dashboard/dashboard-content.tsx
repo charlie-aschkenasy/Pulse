@@ -576,7 +576,7 @@ export function DashboardContent() {
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div id="tour-task-columns" className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div id="tour-task-columns" className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {categories.map((category) => (
             <DroppableSection
               key={category.id}
