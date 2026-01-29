@@ -37,14 +37,15 @@ import {
 import { TaskList } from '@/components/tasks/task-list'
 import { TaskCard } from '@/components/tasks/task-card'
 import { TaskModal } from '@/components/tasks/task-modal'
-import { getTaskCounts, getTasksWithSubtasksByViewCategory, updateTask, deleteTask, archiveTask } from '@/app/actions/tasks'
-import { getProjects } from '@/app/actions/projects'
+import { updateTask, deleteTask, archiveTask } from '@/app/actions/tasks'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { Task, Project, ViewCategory, Subtask } from '@/types/database'
 import { useWalkthrough } from '@/components/onboarding/walkthrough-context'
-
-type TaskWithSubtasks = Task & { project?: Project | null; subtasks: Subtask[] }
+import { useTasksByViewCategory, TaskWithSubtasks, invalidateAllTasks, TASKS_KEYS } from '@/hooks/use-tasks'
+import { useProjects } from '@/hooks/use-projects'
+import { useTaskCounts, invalidateTaskCounts, TASK_COUNTS_KEY } from '@/hooks/use-task-counts'
+import { mutate } from 'swr'
 
 interface CategorySection {
   id: ViewCategory
@@ -121,12 +122,15 @@ export function DashboardContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const walkthrough = useWalkthrough()
-  const [dailyTasks, setDailyTasks] = useState<TaskWithSubtasks[]>([])
-  const [weeklyTasks, setWeeklyTasks] = useState<TaskWithSubtasks[]>([])
-  const [monthlyTasks, setMonthlyTasks] = useState<TaskWithSubtasks[]>([])
-  const [projects, setProjects] = useState<Project[]>([])
-  const [taskCounts, setTaskCounts] = useState({ total: 0, completed: 0, overdue: 0, dueToday: 0 })
-  const [isLoading, setIsLoading] = useState(true)
+
+  // SWR hooks for data fetching
+  const { tasks: dailyTasks, mutate: mutateDaily } = useTasksByViewCategory('daily')
+  const { tasks: weeklyTasks, mutate: mutateWeekly } = useTasksByViewCategory('weekly')
+  const { tasks: monthlyTasks, mutate: mutateMonthly } = useTasksByViewCategory('monthly')
+  const { projects } = useProjects()
+  const { counts: taskCounts, mutate: mutateCounts } = useTaskCounts()
+
+  // Local state for filtering and UI
   const [showCompleted, setShowCompleted] = useState(false)
   const [projectFilter, setProjectFilter] = useState<string>('all')
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -173,45 +177,21 @@ export function DashboardContent() {
     return filtered
   }, [showCompleted, projectFilter])
 
-  const loadData = useCallback(async () => {
-    setIsLoading(true)
-    try {
-      const [projectsRes, countsRes, dailyRes, weeklyRes, monthlyRes] = await Promise.all([
-        getProjects(),
-        getTaskCounts(),
-        getTasksWithSubtasksByViewCategory('daily'),
-        getTasksWithSubtasksByViewCategory('weekly'),
-        getTasksWithSubtasksByViewCategory('monthly'),
-      ])
-
-      if (projectsRes.data) setProjects(projectsRes.data)
-      if (countsRes.data) setTaskCounts(countsRes.data)
-      if (dailyRes.data) setDailyTasks(dailyRes.data as TaskWithSubtasks[])
-      if (weeklyRes.data) setWeeklyTasks(weeklyRes.data as TaskWithSubtasks[])
-      if (monthlyRes.data) setMonthlyTasks(monthlyRes.data as TaskWithSubtasks[])
-    } finally {
-      setIsLoading(false)
+  // Helper to get mutate function for a category
+  const getMutateForCategory = (category: ViewCategory) => {
+    switch (category) {
+      case 'daily': return mutateDaily
+      case 'weekly': return mutateWeekly
+      case 'monthly': return mutateMonthly
     }
-  }, [])
+  }
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
-
-  // Helper to get/set tasks for a category
-  const getTasksState = (category: ViewCategory) => {
+  // Helper to get tasks for a category
+  const getTasksForCategory = (category: ViewCategory) => {
     switch (category) {
       case 'daily': return dailyTasks
       case 'weekly': return weeklyTasks
       case 'monthly': return monthlyTasks
-    }
-  }
-
-  const setTasksState = (category: ViewCategory, tasks: TaskWithSubtasks[]) => {
-    switch (category) {
-      case 'daily': setDailyTasks(tasks); break
-      case 'weekly': setWeeklyTasks(tasks); break
-      case 'monthly': setMonthlyTasks(tasks); break
     }
   }
 
@@ -221,36 +201,6 @@ export function DashboardContent() {
     if (weeklyTasks.find(t => t.id === taskId)) return 'weekly'
     if (monthlyTasks.find(t => t.id === taskId)) return 'monthly'
     return null
-  }
-
-  // Update a task in its category array
-  const updateTaskInState = (taskId: string, updates: Partial<Task>) => {
-    const category = findTaskCategory(taskId)
-    if (!category) return
-
-    const tasks = getTasksState(category)
-    const updatedTasks = tasks.map(t =>
-      t.id === taskId ? { ...t, ...updates } : t
-    )
-    setTasksState(category, updatedTasks)
-  }
-
-  // Remove a task from its category array
-  const removeTaskFromState = (taskId: string) => {
-    const category = findTaskCategory(taskId)
-    if (!category) return null
-
-    const tasks = getTasksState(category)
-    const task = tasks.find(t => t.id === taskId)
-    const updatedTasks = tasks.filter(t => t.id !== taskId)
-    setTasksState(category, updatedTasks)
-    return task
-  }
-
-  // Add a task to a category array
-  const addTaskToState = (task: TaskWithSubtasks, category: ViewCategory) => {
-    const tasks = getTasksState(category)
-    setTasksState(category, [...tasks, task])
   }
 
   const handleEdit = (task: Task) => {
@@ -263,49 +213,66 @@ export function DashboardContent() {
     setEditingTask(null)
   }
 
-  // Optimistic: handle task creation/edit from modal
+  // Handle task creation/edit from modal
   const handleSuccess = (task?: Task & { project?: Project | null }) => {
     if (task) {
       const existingCategory = findTaskCategory(task.id)
-      // Add empty subtasks array for new tasks from modal
       const taskWithSubtasks: TaskWithSubtasks = { ...task, subtasks: [] }
 
       if (existingCategory) {
         // Task was edited
         if (existingCategory === task.view_category) {
-          // Same category - just update in place
-          updateTaskInState(task.id, task)
+          // Same category - optimistic update in place
+          getMutateForCategory(existingCategory)(
+            (current) => current?.map(t => t.id === task.id ? { ...t, ...task } : t),
+            { revalidate: false }
+          )
         } else {
-          // Category changed - move to new category (preserve existing subtasks)
-          const existingTask = removeTaskFromState(task.id)
-          addTaskToState({ ...taskWithSubtasks, subtasks: existingTask?.subtasks || [] }, task.view_category)
+          // Category changed - remove from old, add to new
+          getMutateForCategory(existingCategory)(
+            (current) => current?.filter(t => t.id !== task.id),
+            { revalidate: false }
+          )
+          const existingTasks = getTasksForCategory(existingCategory)
+          const existingTask = existingTasks.find(t => t.id === task.id)
+          getMutateForCategory(task.view_category)(
+            (current) => [...(current || []), { ...taskWithSubtasks, subtasks: existingTask?.subtasks || [] }],
+            { revalidate: false }
+          )
         }
       } else {
         // New task - add to appropriate category
-        addTaskToState(taskWithSubtasks, task.view_category)
+        getMutateForCategory(task.view_category)(
+          (current) => [...(current || []), taskWithSubtasks],
+          { revalidate: false }
+        )
 
         // Walkthrough: track tutorial task and advance
         if (walkthrough.isActive && walkthrough.currentStep === 'fill-task-form') {
           walkthrough.setTutorialTaskId(task.id)
           walkthrough.advanceStep('task-created')
         }
-      }
 
-      // Update counts optimistically
-      if (!existingCategory) {
-        setTaskCounts(prev => ({ ...prev, total: prev.total + 1 }))
+        // Update counts optimistically
+        mutateCounts(
+          (current) => current ? { ...current, total: current.total + 1 } : current,
+          { revalidate: false }
+        )
       }
     } else {
-      // Fallback: reload if no task data returned
-      loadData()
+      // Fallback: revalidate all if no task data returned
+      invalidateAllTasks()
+      invalidateTaskCounts()
     }
   }
 
-  // Handle subtask updates (reload to get fresh data)
+  // Handle subtask updates
   const handleSubtaskUpdate = useCallback(() => {
-    // Reload data to reflect subtask changes
-    loadData()
-  }, [loadData])
+    // Revalidate tasks to reflect subtask changes
+    mutateDaily()
+    mutateWeekly()
+    mutateMonthly()
+  }, [mutateDaily, mutateWeekly, mutateMonthly])
 
   const handleNewTask = (category: ViewCategory) => {
     setDefaultViewCategory(category)
@@ -320,23 +287,38 @@ export function DashboardContent() {
 
   // Optimistic status change
   const handleStatusChange = (taskId: string, newStatus: string) => {
-    const oldStatus = [...dailyTasks, ...weeklyTasks, ...monthlyTasks].find(t => t.id === taskId)?.status
+    const category = findTaskCategory(taskId)
+    if (!category) return
+
+    const tasks = getTasksForCategory(category)
+    const task = tasks.find(t => t.id === taskId)
+    const oldStatus = task?.status
 
     // Optimistic update
-    updateTaskInState(taskId, { status: newStatus as Task['status'] })
+    getMutateForCategory(category)(
+      (current) => current?.map(t => t.id === taskId ? { ...t, status: newStatus as Task['status'] } : t),
+      { revalidate: false }
+    )
 
     // Update counts optimistically
     if (newStatus === 'completed' && oldStatus !== 'completed') {
-      setTaskCounts(prev => ({ ...prev, completed: prev.completed + 1 }))
+      mutateCounts(
+        (current) => current ? { ...current, completed: current.completed + 1 } : current,
+        { revalidate: false }
+      )
     } else if (newStatus !== 'completed' && oldStatus === 'completed') {
-      setTaskCounts(prev => ({ ...prev, completed: Math.max(0, prev.completed - 1) }))
+      mutateCounts(
+        (current) => current ? { ...current, completed: Math.max(0, current.completed - 1) } : current,
+        { revalidate: false }
+      )
     }
 
     // Fire server call in background
     updateTask(taskId, { status: newStatus as Task['status'] }).then(({ error }) => {
       if (error) {
         toast.error('Failed to update task')
-        loadData() // Reload to restore correct state
+        getMutateForCategory(category)() // Revalidate to restore correct state
+        mutateCounts()
       } else {
         toast.success(newStatus === 'completed' ? 'Task completed!' : 'Task reopened')
       }
@@ -345,22 +327,36 @@ export function DashboardContent() {
 
   // Optimistic delete
   const handleDelete = (taskId: string) => {
-    const removedTask = removeTaskFromState(taskId)
+    const category = findTaskCategory(taskId)
+    if (!category) return
 
-    if (removedTask) {
-      // Update counts optimistically
-      setTaskCounts(prev => ({
-        ...prev,
-        total: Math.max(0, prev.total - 1),
-        completed: removedTask.status === 'completed' ? Math.max(0, prev.completed - 1) : prev.completed,
-      }))
+    const tasks = getTasksForCategory(category)
+    const task = tasks.find(t => t.id === taskId)
+
+    // Optimistic update
+    getMutateForCategory(category)(
+      (current) => current?.filter(t => t.id !== taskId),
+      { revalidate: false }
+    )
+
+    // Update counts optimistically
+    if (task) {
+      mutateCounts(
+        (current) => current ? {
+          ...current,
+          total: Math.max(0, current.total - 1),
+          completed: task.status === 'completed' ? Math.max(0, current.completed - 1) : current.completed,
+        } : current,
+        { revalidate: false }
+      )
     }
 
     // Fire server call in background
     deleteTask(taskId).then(({ error }) => {
       if (error) {
         toast.error('Failed to delete task')
-        loadData() // Reload to restore correct state
+        getMutateForCategory(category)() // Revalidate to restore correct state
+        mutateCounts()
       } else {
         toast.success('Task deleted')
       }
@@ -369,22 +365,36 @@ export function DashboardContent() {
 
   // Optimistic archive
   const handleArchive = (taskId: string) => {
-    const removedTask = removeTaskFromState(taskId)
+    const category = findTaskCategory(taskId)
+    if (!category) return
 
-    if (removedTask) {
-      // Update counts optimistically (archived tasks are excluded from counts)
-      setTaskCounts(prev => ({
-        ...prev,
-        total: Math.max(0, prev.total - 1),
-        completed: removedTask.status === 'completed' ? Math.max(0, prev.completed - 1) : prev.completed,
-      }))
+    const tasks = getTasksForCategory(category)
+    const task = tasks.find(t => t.id === taskId)
+
+    // Optimistic update
+    getMutateForCategory(category)(
+      (current) => current?.filter(t => t.id !== taskId),
+      { revalidate: false }
+    )
+
+    // Update counts optimistically
+    if (task) {
+      mutateCounts(
+        (current) => current ? {
+          ...current,
+          total: Math.max(0, current.total - 1),
+          completed: task.status === 'completed' ? Math.max(0, current.completed - 1) : current.completed,
+        } : current,
+        { revalidate: false }
+      )
     }
 
     // Fire server call in background
     archiveTask(taskId).then(({ error }) => {
       if (error) {
         toast.error('Failed to archive task')
-        loadData() // Reload to restore correct state
+        getMutateForCategory(category)() // Revalidate to restore correct state
+        mutateCounts()
       } else {
         toast.success('Task archived')
       }
@@ -431,19 +441,20 @@ export function DashboardContent() {
       return // Same category or invalid drop
     }
 
+    const sourceCategory = draggedTask.view_category
     const categoryLabel = categories.find(c => c.id === targetCategoryId)?.label
 
     // Optimistic update: move task between categories
-    const sourceCategory = draggedTask.view_category
-    const sourceTasks = getTasksState(sourceCategory)
-    const targetTasks = getTasksState(targetCategoryId)
+    getMutateForCategory(sourceCategory)(
+      (current) => current?.filter(t => t.id !== draggedTask.id),
+      { revalidate: false }
+    )
 
-    // Remove from source
-    setTasksState(sourceCategory, sourceTasks.filter(t => t.id !== draggedTask.id))
-
-    // Add to target with updated category
     const updatedTask = { ...draggedTask, view_category: targetCategoryId }
-    setTasksState(targetCategoryId, [...targetTasks, updatedTask])
+    getMutateForCategory(targetCategoryId)(
+      (current) => [...(current || []), updatedTask],
+      { revalidate: false }
+    )
 
     toast.success(`Task moved to ${categoryLabel}`)
 
@@ -461,7 +472,9 @@ export function DashboardContent() {
     updateTask(draggedTask.id, { view_category: targetCategoryId }).then(({ error }) => {
       if (error) {
         toast.error('Failed to save move - reverting')
-        loadData() // Reload to restore correct state
+        // Revalidate both categories to restore correct state
+        getMutateForCategory(sourceCategory)()
+        getMutateForCategory(targetCategoryId!)()
       }
     })
   }
@@ -470,7 +483,7 @@ export function DashboardContent() {
   const filteredWeekly = filterTasks(weeklyTasks)
   const filteredMonthly = filterTasks(monthlyTasks)
 
-  const getTasksForCategory = (categoryId: ViewCategory) => {
+  const getFilteredTasksForCategory = (categoryId: ViewCategory) => {
     switch (categoryId) {
       case 'daily':
         return filteredDaily
@@ -581,7 +594,7 @@ export function DashboardContent() {
             <DroppableSection
               key={category.id}
               category={category}
-              tasks={getTasksForCategory(category.id)}
+              tasks={getFilteredTasksForCategory(category.id)}
               onEdit={handleEdit}
               onAddTask={handleNewTask}
               onStatusChange={handleStatusChange}

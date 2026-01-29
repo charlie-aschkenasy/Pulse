@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import {
   DndContext,
   closestCenter,
@@ -9,8 +9,6 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
-  DragOverEvent,
-  DragStartEvent,
 } from '@dnd-kit/core'
 import {
   arrayMove,
@@ -23,19 +21,45 @@ import { Plus, FolderOpen } from 'lucide-react'
 import { ProjectCard } from '@/components/projects/project-card'
 import { ProjectModal } from '@/components/projects/project-modal'
 import { TaskModal } from '@/components/tasks/task-modal'
-import { getProjectsWithTaskCounts, reorderProjects } from '@/app/actions/projects'
-import { getTasksWithSubtasksByProject } from '@/app/actions/tasks'
+import { reorderProjects } from '@/app/actions/projects'
 import { toast } from 'sonner'
 import type { Project, Task, Subtask } from '@/types/database'
+import { useProjectsWithCounts, invalidateProjects, ProjectWithCounts } from '@/hooks/use-projects'
+import { useTasksByProject, TASKS_KEYS, invalidateAllTasks } from '@/hooks/use-tasks'
+import { mutate } from 'swr'
 
 type TaskWithSubtasks = Task & { subtasks: Subtask[] }
 
-type ProjectWithCounts = Project & { total_tasks: number; completed_tasks: number }
+// Component to load tasks for a specific project
+function ProjectCardWithTasks({
+  project,
+  onEdit,
+  onAddTask,
+  onEditTask,
+  onSubtaskUpdate,
+}: {
+  project: ProjectWithCounts
+  onEdit: (project: Project) => void
+  onAddTask: (projectId: string) => void
+  onEditTask: (task: Task) => void
+  onSubtaskUpdate: () => void
+}) {
+  const { tasks } = useTasksByProject(project.id)
+
+  return (
+    <ProjectCard
+      project={project}
+      tasks={tasks}
+      onEdit={onEdit}
+      onAddTask={onAddTask}
+      onEditTask={onEditTask}
+      onSubtaskUpdate={onSubtaskUpdate}
+    />
+  )
+}
 
 export function ProjectsContent() {
-  const [projects, setProjects] = useState<ProjectWithCounts[]>([])
-  const [tasksByProject, setTasksByProject] = useState<Record<string, TaskWithSubtasks[]>>({})
-  const [isLoading, setIsLoading] = useState(true)
+  const { projects, isLoading, mutate: mutateProjects } = useProjectsWithCounts()
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false)
@@ -52,33 +76,6 @@ export function ProjectsContent() {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   )
-
-  const loadData = useCallback(async () => {
-    setIsLoading(true)
-    try {
-      const { data } = await getProjectsWithTaskCounts()
-      if (data) {
-        const projectsData = data as ProjectWithCounts[]
-        setProjects(projectsData)
-
-        // Load tasks with subtasks for each project
-        const tasksMap: Record<string, TaskWithSubtasks[]> = {}
-        await Promise.all(
-          projectsData.map(async (project: ProjectWithCounts) => {
-            const { data: tasks } = await getTasksWithSubtasksByProject(project.id)
-            tasksMap[project.id] = (tasks || []) as TaskWithSubtasks[]
-          })
-        )
-        setTasksByProject(tasksMap)
-      }
-    } finally {
-      setIsLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    loadData()
-  }, [loadData])
 
   const handleProjectEdit = (project: Project) => {
     setEditingProject(project)
@@ -108,9 +105,26 @@ export function ProjectsContent() {
     setPreselectedProjectId(null)
   }
 
-  const handleSuccess = () => {
-    loadData()
+  const handleProjectSuccess = () => {
+    mutateProjects()
+    invalidateProjects()
   }
+
+  const handleTaskSuccess = () => {
+    // Invalidate the specific project's tasks and projects with counts
+    if (preselectedProjectId) {
+      mutate(TASKS_KEYS.byProject(preselectedProjectId))
+    }
+    mutateProjects()
+    invalidateAllTasks()
+  }
+
+  const handleSubtaskUpdate = useCallback(() => {
+    // Revalidate all project tasks
+    projects.forEach(project => {
+      mutate(TASKS_KEYS.byProject(project.id))
+    })
+  }, [projects])
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event
@@ -120,12 +134,14 @@ export function ProjectsContent() {
       const newIndex = projects.findIndex((p) => p.id === over.id)
 
       const newProjects = arrayMove(projects, oldIndex, newIndex)
-      setProjects(newProjects)
+
+      // Optimistic update
+      mutateProjects(newProjects, { revalidate: false })
 
       const { error } = await reorderProjects(newProjects.map((p) => p.id))
       if (error) {
         toast.error('Failed to reorder projects')
-        loadData()
+        mutateProjects() // Revalidate to restore correct state
       }
     }
   }
@@ -163,7 +179,7 @@ export function ProjectsContent() {
           open={isProjectModalOpen}
           onOpenChange={handleProjectModalClose}
           project={editingProject}
-          onSuccess={handleSuccess}
+          onSuccess={handleProjectSuccess}
         />
       </div>
     )
@@ -195,14 +211,13 @@ export function ProjectsContent() {
         >
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {projects.map((project) => (
-              <ProjectCard
+              <ProjectCardWithTasks
                 key={project.id}
                 project={project}
-                tasks={tasksByProject[project.id] || []}
                 onEdit={handleProjectEdit}
                 onAddTask={handleAddTask}
                 onEditTask={handleTaskEdit}
-                onSubtaskUpdate={loadData}
+                onSubtaskUpdate={handleSubtaskUpdate}
               />
             ))}
           </div>
@@ -213,7 +228,7 @@ export function ProjectsContent() {
         open={isProjectModalOpen}
         onOpenChange={handleProjectModalClose}
         project={editingProject}
-        onSuccess={handleSuccess}
+        onSuccess={handleProjectSuccess}
       />
 
       <TaskModal
@@ -221,7 +236,7 @@ export function ProjectsContent() {
         onOpenChange={handleTaskModalClose}
         task={editingTask}
         projects={projects}
-        onSuccess={handleSuccess}
+        onSuccess={handleTaskSuccess}
         defaultQuadrant={preselectedProjectId ? undefined : undefined}
       />
     </div>

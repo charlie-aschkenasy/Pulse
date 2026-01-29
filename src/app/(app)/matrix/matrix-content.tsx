@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   DndContext,
   closestCenter,
@@ -9,7 +9,6 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
-  DragOverEvent,
   DragOverlay,
   DragStartEvent,
 } from '@dnd-kit/core'
@@ -27,11 +26,12 @@ import { cn } from '@/lib/utils'
 import { Plus, Zap, Calendar, Users, Trash2 } from 'lucide-react'
 import { MatrixTaskCard } from '@/components/matrix/matrix-task-card'
 import { TaskModal } from '@/components/tasks/task-modal'
-import { getTasksForCoveyMatrix, updateTaskQuadrant, reorderTasks } from '@/app/actions/tasks'
-import { getProjects } from '@/app/actions/projects'
+import { updateTaskQuadrant, reorderTasks } from '@/app/actions/tasks'
 import { toast } from 'sonner'
 import type { Task, Project } from '@/types/database'
 import { useDroppable } from '@dnd-kit/core'
+import { useMatrixTasks, TaskWithProject, invalidateMatrixTasks, invalidateAllTasks } from '@/hooks/use-tasks'
+import { useProjects } from '@/hooks/use-projects'
 
 type Quadrant = {
   id: string
@@ -89,7 +89,7 @@ function QuadrantDropZone({
   onEditTask,
 }: {
   quadrant: Quadrant
-  tasks: (Task & { project?: Project | null })[]
+  tasks: TaskWithProject[]
   onAddTask: (quadrant: Quadrant) => void
   onEditTask: (task: Task) => void
 }) {
@@ -167,13 +167,12 @@ function QuadrantDropZone({
 }
 
 export function MatrixContent() {
-  const [tasks, setTasks] = useState<(Task & { project?: Project | null })[]>([])
-  const [projects, setProjects] = useState<Project[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const { tasks, isLoading, mutate: mutateTasks } = useMatrixTasks()
+  const { projects } = useProjects()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [defaultQuadrant, setDefaultQuadrant] = useState<{ urgent: boolean; important: boolean } | undefined>()
-  const [activeTask, setActiveTask] = useState<(Task & { project?: Project | null }) | null>(null)
+  const [activeTask, setActiveTask] = useState<TaskWithProject | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -185,25 +184,6 @@ export function MatrixContent() {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   )
-
-  const loadData = useCallback(async () => {
-    setIsLoading(true)
-    try {
-      const [tasksRes, projectsRes] = await Promise.all([
-        getTasksForCoveyMatrix(),
-        getProjects(),
-      ])
-
-      if (tasksRes.data) setTasks(tasksRes.data)
-      if (projectsRes.data) setProjects(projectsRes.data)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    loadData()
-  }, [loadData])
 
   const getTasksForQuadrant = (urgent: boolean, important: boolean) => {
     return tasks
@@ -230,7 +210,8 @@ export function MatrixContent() {
   }
 
   const handleSuccess = () => {
-    loadData()
+    mutateTasks()
+    invalidateAllTasks()
   }
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -247,24 +228,33 @@ export function MatrixContent() {
 
     if (!over) return
 
-    const activeTask = tasks.find((t) => t.id === active.id)
-    if (!activeTask) return
+    const draggedTask = tasks.find((t) => t.id === active.id)
+    if (!draggedTask) return
 
     // Check if dropped on a quadrant
     const targetQuadrant = quadrants.find((q) => q.id === over.id)
     if (targetQuadrant) {
       // Move to different quadrant
-      if (activeTask.urgent !== targetQuadrant.urgent || activeTask.important !== targetQuadrant.important) {
+      if (draggedTask.urgent !== targetQuadrant.urgent || draggedTask.important !== targetQuadrant.important) {
+        // Optimistic update
+        mutateTasks(
+          tasks.map(t => t.id === draggedTask.id
+            ? { ...t, urgent: targetQuadrant.urgent, important: targetQuadrant.important }
+            : t
+          ),
+          { revalidate: false }
+        )
+
         const { error } = await updateTaskQuadrant(
-          activeTask.id,
+          draggedTask.id,
           targetQuadrant.urgent,
           targetQuadrant.important
         )
         if (error) {
           toast.error('Failed to move task')
+          mutateTasks() // Revalidate to restore correct state
         } else {
           toast.success('Task moved!')
-          loadData()
         }
       }
       return
@@ -272,15 +262,15 @@ export function MatrixContent() {
 
     // Check if reordering within same quadrant
     const overTask = tasks.find((t) => t.id === over.id)
-    if (overTask && activeTask.urgent === overTask.urgent && activeTask.important === overTask.important) {
-      const quadrantTasks = getTasksForQuadrant(activeTask.urgent, activeTask.important)
+    if (overTask && draggedTask.urgent === overTask.urgent && draggedTask.important === overTask.important) {
+      const quadrantTasks = getTasksForQuadrant(draggedTask.urgent, draggedTask.important)
       const oldIndex = quadrantTasks.findIndex((t) => t.id === active.id)
       const newIndex = quadrantTasks.findIndex((t) => t.id === over.id)
 
       if (oldIndex !== newIndex) {
         const newOrder = arrayMove(quadrantTasks, oldIndex, newIndex)
 
-        // Update local state
+        // Optimistic update
         const newTasks = tasks.map((t) => {
           const idx = newOrder.findIndex((nt) => nt.id === t.id)
           if (idx !== -1) {
@@ -288,7 +278,7 @@ export function MatrixContent() {
           }
           return t
         })
-        setTasks(newTasks)
+        mutateTasks(newTasks, { revalidate: false })
 
         const { error } = await reorderTasks(
           newOrder.map((t) => t.id),
@@ -296,21 +286,30 @@ export function MatrixContent() {
         )
         if (error) {
           toast.error('Failed to reorder tasks')
-          loadData()
+          mutateTasks() // Revalidate to restore correct state
         }
       }
     } else if (overTask) {
       // Move to different quadrant (dropped on a task in another quadrant)
+      // Optimistic update
+      mutateTasks(
+        tasks.map(t => t.id === draggedTask.id
+          ? { ...t, urgent: overTask.urgent, important: overTask.important }
+          : t
+        ),
+        { revalidate: false }
+      )
+
       const { error } = await updateTaskQuadrant(
-        activeTask.id,
+        draggedTask.id,
         overTask.urgent,
         overTask.important
       )
       if (error) {
         toast.error('Failed to move task')
+        mutateTasks() // Revalidate to restore correct state
       } else {
         toast.success('Task moved!')
-        loadData()
       }
     }
   }
