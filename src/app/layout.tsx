@@ -23,7 +23,7 @@ export const metadata: Metadata = {
     title: 'Pulse',
   },
   icons: {
-    apple: '/icon-192.png',
+    apple: '/apple-touch-icon.png',
   },
 }
 
